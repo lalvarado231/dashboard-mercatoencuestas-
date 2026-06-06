@@ -10,7 +10,8 @@ st.markdown("---")
 # Meta u Objetivo del Grupo para el Semáforo de Calificaciones
 META_CALIFICACION = 4.6
 
-# 1. FUNCIÓN INTELIGENTE PARA CARGAR CUALQUIER EXCEL
+# 1. FUNCIÓN INTELIGENTE CON CACHÉ (Optimiza la velocidad drásticamente)
+@st.cache_data(ttl=3600)  # Guarda los datos en memoria por 1 hora o hasta que cambies el archivo en GitHub
 def procesar_excel(archivo_path):
     try:
         xls = pd.ExcelFile(archivo_path)
@@ -62,7 +63,7 @@ else:
         index=def_idx
     )
 
-    # Cargar Datos Base
+    # Cargar Datos Base (Usando la función con caché)
     df_actual_completo = procesar_excel(archivo_actual)
     
     if df_actual_completo is not None:
@@ -94,7 +95,7 @@ else:
         if sel_mesero != "TODOS LOS MESEROS":
             df_act = df_act[df_act[col_mesero] == sel_mesero].copy()
 
-        # Cargar semana anterior si aplica
+        # Cargar semana anterior si aplica (también usa caché)
         df_ant = None
         if archivo_anterior != "Ninguno (Ver solo reporte actual)":
             df_anterior_completo = procesar_excel(archivo_anterior)
@@ -190,7 +191,7 @@ else:
 
         st.markdown("---")
 
-        # --- SECCIÓN 2: GRÁFICOS DINÁMICOS CORREGIDOS ---
+        # --- SECCIÓN 2: GRÁFICOS DINÁMICOS ---
         st.subheader("🏆 Análisis Visual del Periodo")
         
         if sel_mesero == "TODOS LOS MESEROS":
@@ -219,7 +220,6 @@ else:
                         fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
                         st.plotly_chart(fig_cal, use_container_width=True)
         else:
-            # VISTA INDIVIDUAL CORREGIDA (RANGOS BLINDADOS)
             g1, g2 = st.columns(2)
             with g1:
                 st.markdown(f"##### 📊 Histograma de Calificaciones para {sel_mesero}")
@@ -239,4 +239,11 @@ else:
 
         # --- SECCIÓN 3: TABLA DE COMENTARIOS NEGATIVOS ---
         if col_calif in df_act.columns:
-            malos_comentarios = df_act
+            malos_comentarios = df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif])
+            if not malos_comentarios.empty:
+                st.markdown("---")
+                st.subheader("⚠️ Atención Inmediata: Comentarios Negativos del Periodo")
+                columnas_existentes = [c for c in ['Restaurante_Origen', col_mesero, col_calif, col_comentario] if c in df_act.columns]
+                st.dataframe(malos_comentarios[columnas_existentes], use_container_width=True)
+
+        # --- SECCIÓN 4: REVISIÓN GLOBAL DE DATOS ---
