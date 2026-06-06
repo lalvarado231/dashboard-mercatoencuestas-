@@ -5,13 +5,34 @@ import os
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wide", page_icon="📊")
-st.title("📊 Dashboard con Doble Comparativa de Fechas - Il Mercato")
+st.title("📊 Dashboard con Doble Comparativa y NPS - Il Mercato")
 st.markdown("---")
 
 # Meta u Objetivo del Grupo para el Semáforo de Calificaciones
 META_CALIFICACION = 4.6
 
-# 1. PROCESADOR AUTOMÁTICO DE ARCHIVOS CRUDOS DE TALLY (CSV)
+# 1. FUNCIÓN INTELIGENTE PARA CALCULAR EL NPS OFICIAL (-100 a +100)
+def calcular_nps(df, columna_nps):
+    if columna_nps not in df.columns or len(df) == 0:
+        return None
+    
+    # Asegurar que los valores sean numéricos
+    valores = pd.to_numeric(df[columna_nps], errors='coerce').dropna()
+    total_respuestas = len(valores)
+    
+    if total_respuestas == 0:
+        return None
+        
+    promotores = len(valores[valores >= 9])
+    detractores = len(valores[valores <= 6])
+    
+    pct_promotores = (promotores / total_respuestas) * 100
+    pct_detractores = (detractores / total_respuestas) * 100
+    
+    nps_score = pct_promotores - pct_detractores
+    return nps_score
+
+# 2. PROCESADOR AUTOMÁTICO DE ARCHIVOS CRUDOS DE TALLY (CSV)
 @st.cache_data(show_spinner=False)  
 def procesar_tally_csv(archivo_path):
     if not os.path.exists(archivo_path):
@@ -39,7 +60,7 @@ def procesar_tally_csv(archivo_path):
         
     return None
 
-# 2. DETECTAR EL ARCHIVO HISTÓRICO DE TALLY
+# 3. DETECTAR EL ARCHIVO HISTÓRICO DE TALLY
 todos_los_archivos = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
 
 if len(todos_los_archivos) == 0:
@@ -58,6 +79,7 @@ else:
         col_mesero = 'Selecciona a la persona que te atendió / Select the person who assisted you'
         col_calif = 'Califica la atención recibida / How would you rate your experience?'
         col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
+        col_nps = '¿Qué tan probable es que nos recomiende a un familiar, amigo o colega? /How likely are you to recommend us to a friend, family member, or colleague?'
 
         if col_calif in df_completo.columns:
             df_completo[col_calif] = pd.to_numeric(df_completo[col_calif], errors='coerce')
@@ -149,7 +171,7 @@ else:
         if len(rango_actual) == 2 and len(rango_anterior) == 2:
             st.info(f"Análisis: Periodo Actual (**{rango_actual[0].strftime('%d/%m')} al {rango_actual[1].strftime('%d/%m')}**) vs Periodo Anterior (**{rango_anterior[0].strftime('%d/%m')} al {rango_anterior[1].strftime('%d/%m')}**)")
 
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3, m4, m5 = st.columns(5)
         
         # Métrica 1: Volumen de Respuestas
         total_act = len(df_act)
@@ -175,39 +197,55 @@ else:
                 value=f"{prom_act:.2f} ⭐", 
                 delta=f"{diff_prom:+.2f} ⭐" if diff_prom is not None else None
             )
-            # Semáforo visual dinámico
-            if prom_act >= META_CALIFICACION:
-                st.success(f"🟢 **Estatus del Periodo Evaluado: Excelente.** Promedio de {prom_act:.2f} ⭐")
-            elif prom_act >= 4.3:
-                st.warning(f"🟡 **Estatus del Periodo Evaluado: En Observación.** Promedio de {prom_act:.2f} ⭐")
-            else:
-                st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** Promedio de {prom_act:.2f} ⭐")
         else:
             m2.metric("Promedio Calificación", "N/A")
 
-        # Métrica 3: Alertas Críticas (1-2 ⭐)
+        # Métrica 3: ÍNDICE NPS DINÁMICO
+        nps_act = calcular_nps(df_act, col_nps)
+        nps_ant = calcular_nps(df_ant, col_nps)
+        
+        if nps_act is not None:
+            diff_nps = (nps_act - nps_ant) if nps_ant is not None else None
+            m3.metric(
+                label="Índice NPS (Lealtad)",
+                value=f"{nps_act:.1f}%",
+                delta=f"{diff_nps:+.1f}% vs periodo ant." if diff_nps is not None else None
+            )
+        else:
+            m3.metric("Índice NPS (Lealtad)", "N/A (Sin datos)")
+
+        # Métrica 4: Alertas Críticas (1-2 ⭐)
         if col_calif in df_act.columns:
             alertas_act = len(df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif]))
             alertas_ant = len(df_ant[df_ant[col_calif] <= 2].dropna(subset=[col_calif])) if len(df_ant) > 0 else 0
             diff_alertas = alertas_act - alertas_ant
-            m3.metric(
+            m4.metric(
                 label="Alertas Críticas (1-2 ⭐)", 
                 value=alertas_act, 
                 delta=f"{diff_alertas:+d} quejas",
                 delta_color="inverse"
             )
         else:
-            m3.metric("Alertas Críticas", "0")
+            m4.metric("Alertas Críticas", "0")
 
-        # Métrica 4: Total de Personal Evaluado
+        # Métrica 5: Total de Personal Evaluado
         meseros_act = df_act[col_mesero].dropna().nunique() if (col_mesero in df_act.columns and len(df_act) > 0) else 0
         meseros_ant = df_ant[col_mesero].dropna().nunique() if (col_mesero in df_ant.columns and len(df_ant) > 0) else 0
         diff_meseros = meseros_act - meseros_ant
-        m4.metric(
+        m5.metric(
             label="Meseros Evaluados", 
             value=meseros_act, 
             delta=f"{diff_meseros:+d} integrantes"
         )
+
+        # Semáforo de Texto General en base al promedio de estrellas del periodo evaluado
+        if prom_act is not None and not pd.isna(prom_act):
+            if prom_act >= META_CALIFICACION:
+                st.success(f"🟢 **Estatus del Periodo Evaluado: Excelente.** Promedio de {prom_act:.2f} ⭐")
+            elif prom_act >= 4.3:
+                st.warning(f"🟡 **Estatus del Periodo Evaluado: En Observación.** Promedio de {prom_act:.2f} ⭐")
+            else:
+                st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** Promedio de {prom_act:.2f} ⭐")
 
         st.markdown("---")
 
@@ -277,7 +315,8 @@ else:
         if len(df_act_visual) == 0:
             st.warning(f"No hay registros específicos que entren en la categoría {opcion_semaforo} para los días seleccionados.")
         else:
-            columnas_finales = [c for c in ['Restaurante_Origen', col_mesero, col_calif, col_comentario, 'Submitted at'] if c in df_act_visual.columns]
+            # Incluimos la nueva columna NPS al final de la tabla para que puedas auditarla individualmente
+            columnas_finales = [c for c in ['Restaurante_Origen', col_mesero, col_calif, col_comentario, col_nps, 'Submitted_at'] if c in df_act_visual.columns or c == col_nps]
             st.dataframe(df_act_visual[columnas_finales], use_container_width=True)
     else:
         st.error("Error al procesar la estructura del archivo. Revisa que sea el CSV correcto descargado de Tally.")
