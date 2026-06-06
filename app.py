@@ -36,11 +36,11 @@ def procesar_excel(archivo_path):
         
     return pd.concat(lista_dfs, ignore_index=True, sort=False)
 
-# 2. DETECTAR TODOS LOS ARCHIVOS DE EXCEL EN GITHUB
-todos_los_archivos = [f for f in os.listdir('.') if f.endswith('.xlsx') and not f.startswith('~$')]
+# 2. DETECTAR TODOS LOS ARCHIVOS DE EXCEL (SÚPER FLEXIBLE)
+todos_los_archivos = [f for f in os.listdir('.') if f.lower().endswith('.xlsx') and not f.startswith('~$')]
 
 if len(todos_los_archivos) == 0:
-    st.error("⚠️ No se encontraron archivos de Excel (.xlsx) en el repositorio. Por favor sube al menos uno.")
+    st.error("⚠️ No se encontraron archivos de Excel (.xlsx) en el repositorio. Por favor sube al menos un archivo Excel a GitHub.")
 else:
     # --- BARRA LATERAL: CONTROL DE COMPARATIVAS ---
     st.sidebar.header("🔄 Control de Semanas / Reportes")
@@ -54,10 +54,13 @@ else:
     
     # Selector de archivo comparativo (Semana Anterior)
     opciones_anterior = ["Ninguno (Ver solo reporte actual)"] + todos_los_archivos
+    
+    # Intentar poner por defecto el segundo archivo si existe
+    def_idx = 1 if len(todos_los_archivos) > 1 else 0
     archivo_anterior = st.sidebar.selectbox(
         "⏳ Selecciona el Reporte Anterior (Para comparar):", 
         opciones_anterior, 
-        index=0 if len(todos_los_archivos) == 1 else 2
+        index=def_idx
     )
 
     # Cargar Datos
@@ -128,7 +131,6 @@ else:
                 alertas_ant = len(df_ant[df_ant[col_calif] <= 2].dropna(subset=[col_calif]))
                 diff_alertas = alertas_act - alertas_ant
             
-            # En alertas, que baje el número es BUENO (por eso invertimos el color del delta con delta_color)
             m3.metric(
                 label="Alertas Críticas (1-2 ⭐)", 
                 value=alertas_act, 
@@ -199,6 +201,5 @@ else:
         st.markdown("---")
         st.subheader("📋 Consolidado de Datos del Periodo Seleccionado")
         st.dataframe(df_act, use_container_width=True)
-
-    except Exception as e:
-        st.error(f"Error al procesar el Dashboard interno: {e}")
+    else:
+        st.error("Error al procesar el archivo seleccionado. Asegúrate de que tenga las hojas correctas.")
