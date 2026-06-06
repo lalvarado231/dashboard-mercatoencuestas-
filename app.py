@@ -10,8 +10,8 @@ st.markdown("---")
 # Meta u Objetivo del Grupo para el Semáforo de Calificaciones
 META_CALIFICACION = 4.6
 
-# 1. FUNCIÓN INTELIGENTE CON CACHÉ (Entrega una copia limpia para evitar bloqueos)
-@st.cache_data(show_spinner=False)  
+# 1. FUNCIÓN INTELIGENTE CON OPTIMIZACIÓN DE CACHÉ LIGERA (Evita que se quede en Running...)
+@st.cache_data(hash_funcs={str: lambda x: x}, show_spinner=False)  
 def procesar_excel(archivo_path):
     try:
         xls = pd.ExcelFile(archivo_path)
@@ -38,7 +38,6 @@ def procesar_excel(archivo_path):
     if not lista_dfs: 
         return None
         
-    # Combinamos todo y regresamos una COPIA EXPLÍCITA (.copy()) para que se pueda modificar libremente
     df_resultado = pd.concat(lista_dfs, ignore_index=True, sort=False)
     return df_resultado.copy()
 
@@ -65,7 +64,7 @@ else:
         index=def_idx
     )
 
-    # Cargar Datos Base (Trabajamos sobre copias mutables)
+    # Cargar Datos Base
     df_actual_raw = procesar_excel(archivo_actual)
     
     if df_actual_raw is not None:
