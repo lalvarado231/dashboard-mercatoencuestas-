@@ -10,7 +10,7 @@ st.markdown("---")
 # Meta u Objetivo del Grupo para el Semáforo de Calificaciones
 META_CALIFICACION = 4.6
 
-# 1. FUNCIÓN INTELIGENTE CON CACHÉ (Ajustada sin alertas visuales molestas)
+# 1. FUNCIÓN INTELIGENTE CON CACHÉ (Entrega una copia limpia para evitar bloqueos)
 @st.cache_data(show_spinner=False)  
 def procesar_excel(archivo_path):
     try:
@@ -38,7 +38,9 @@ def procesar_excel(archivo_path):
     if not lista_dfs: 
         return None
         
-    return pd.concat(lista_dfs, ignore_index=True, sort=False)
+    # Combinamos todo y regresamos una COPIA EXPLÍCITA (.copy()) para que se pueda modificar libremente
+    df_resultado = pd.concat(lista_dfs, ignore_index=True, sort=False)
+    return df_resultado.copy()
 
 # 2. DETECTAR TODOS LOS ARCHIVOS DE EXCEL
 todos_los_archivos = [f for f in os.listdir('.') if f.lower().endswith('.xlsx') and not f.startswith('~$')]
@@ -63,10 +65,12 @@ else:
         index=def_idx
     )
 
-    # Cargar Datos Base
-    df_actual_completo = procesar_excel(archivo_actual)
+    # Cargar Datos Base (Trabajamos sobre copias mutables)
+    df_actual_raw = procesar_excel(archivo_actual)
     
-    if df_actual_completo is not None:
+    if df_actual_raw is not None:
+        df_actual_completo = df_actual_raw.copy()
+        
         col_mesero = 'Selecciona a la persona que te atendió / Select the person who assisted you'
         col_calif = 'Califica la atención recibida / How would you rate your experience?'
         col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
@@ -98,8 +102,9 @@ else:
         # Cargar semana anterior si aplica
         df_ant = None
         if archivo_anterior != "Ninguno (Ver solo reporte actual)":
-            df_anterior_completo = procesar_excel(archivo_anterior)
-            if df_anterior_completo is not None:
+            df_anterior_raw = procesar_excel(archivo_anterior)
+            if df_anterior_raw is not None:
+                df_anterior_completo = df_anterior_raw.copy()
                 if col_calif in df_anterior_completo.columns:
                     df_anterior_completo[col_calif] = pd.to_numeric(df_anterior_completo[col_calif], errors='coerce')
                 df_ant = df_anterior_completo[df_anterior_completo['Restaurante_Origen'].isin(sel_unidades)].copy()
