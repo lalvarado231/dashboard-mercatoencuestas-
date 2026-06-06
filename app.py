@@ -87,7 +87,7 @@ else:
         # Filtrado inicial por unidades
         df_act = df_actual_completo[df_actual_completo['Restaurante_Origen'].isin(sel_unidades)].copy()
 
-        # --- NUEVO FILTRO DE SEMÁFORO EN LA BARRA LATERAL ---
+        # --- FILTRO DE SEMÁFORO EN LA BARRA LATERAL ---
         st.sidebar.markdown("---")
         st.sidebar.header("🚦 Filtro por Semáforo")
         opcion_semaforo = st.sidebar.radio(
@@ -110,7 +110,7 @@ else:
             elif "🔴" in opcion_semaforo:
                 df_act = df_act[df_act[col_calif] <= 4.2].copy()
 
-        # Cargar semana anterior si aplica para las comparativas (se mantiene sin filtrar por semáforo para no romper el Delta histórico)
+        # Cargar semana anterior si aplica para las comparativas
         df_ant = None
         if archivo_anterior != "Ninguno (Ver solo reporte actual)":
             df_anterior_raw = procesar_excel(archivo_anterior)
@@ -176,4 +176,76 @@ else:
             m3.metric(
                 label="Alertas Críticas (1-2 ⭐)", 
                 value=alertas_act, 
-                delta=f"{diff_alertas:+d} quejas" if diff_alertas is not None else
+                delta=f"{diff_alertas:+d} quejas" if diff_alertas is not None else None,
+                delta_color="inverse" if diff_alertas is not None else "normal"
+            )
+        else:
+            m3.metric("Alertas Críticas", "0")
+
+        # Métrica 4: Total de Personal Evaluado
+        meseros_act = df_act[col_mesero].dropna().nunique() if (col_mesero in df_act.columns and len(df_act) > 0) else 0
+        diff_meseros = None
+        if df_ant is not None and col_mesero in df_ant.columns:
+            diff_meseros = meseros_act - df_ant[col_mesero].dropna().nunique()
+        m4.metric(
+            label="Meseros Evaluados", 
+            value=meseros_act, 
+            delta=f"{diff_meseros:+d} integrantes" if diff_meseros is not None else None
+        )
+
+        st.markdown("---")
+
+        # --- SECCIÓN 2: GRÁFICOS GENERALES (Protegidos contra conjuntos vacíos) ---
+        st.subheader("🏆 Análisis Visual del Periodo")
+        
+        if len(df_act) == 0:
+            st.warning("📋 No existen encuestas registradas para el semáforo o filtros seleccionados en este periodo.")
+        else:
+            t1, t2 = st.columns(2)
+            with t1:
+                st.markdown("##### 🔝 Top 10 Meseros con Mayor Volumen de Encuestas")
+                if col_mesero in df_act.columns and not df_act[col_mesero].dropna().empty:
+                    top_volumen = df_act[col_mesero].value_counts().nlargest(10).reset_index()
+                    top_volumen.columns = ['Mesero', 'Cantidad']
+                    fig_vol = px.bar(top_volumen, x='Cantidad', y='Mesero', orientation='h', 
+                                     color='Cantidad', color_continuous_scale='Blues', text_auto=True)
+                    fig_vol.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_vol, use_container_width=True)
+                else:
+                    st.info("No hay nombres de meseros disponibles para graficar en esta selección.")
+                    
+            with t2:
+                st.markdown("##### ⭐ Top 10 Meseros con Mejor Calificación Promedio")
+                if col_mesero in df_act.columns and col_calif in df_act.columns and not df_act[col_mesero].dropna().empty:
+                    conteo_votos = df_act[col_mesero].value_counts()
+                    # Si no hay suficientes datos con más de 1 voto, relajamos la regla para permitir visualizar el semáforo
+                    meseros_activos = conteo_votos.index
+                    df_meseros_activos = df_act[df_act[col_mesero].isin(meseros_activos)]
+                    
+                    if not df_meseros_activos.empty:
+                        top_calif = df_meseros_activos.groupby(col_mesero)[col_calif].mean().nlargest(10).reset_index()
+                        top_calif.columns = ['Mesero', 'Promedio']
+                        fig_cal = px.bar(top_calif, x='Promedio', y='Mesero', orientation='h',
+                                         color='Promedio', color_continuous_scale='Reds', text_auto='.2f', range_x=[0,5])
+                        fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
+                        st.plotly_chart(fig_cal, use_container_width=True)
+                    else:
+                        st.info("No hay promedios suficientes en este rango.")
+                else:
+                    st.info("No hay calificaciones disponibles para procesar este Top.")
+
+        # --- SECCIÓN 3: TABLA DE COMENTARIOS NEGATIVOS ---
+        if col_calif in df_act.columns and len(df_act) > 0:
+            malos_comentarios = df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif])
+            if not malos_comentarios.empty:
+                st.markdown("---")
+                st.subheader("⚠️ Atención Inmediata: Comentarios Negativos del Periodo")
+                columnas_existentes = [c for c in ['Restaurante_Origen', col_mesero, col_calif, col_comentario] if c in df_act.columns]
+                st.dataframe(malos_comentarios[columnas_existentes], use_container_width=True)
+
+        # --- SECCIÓN 4: REVISIÓN GLOBAL DE DATOS ---
+        st.markdown("---")
+        st.subheader("📋 Consolidado de Datos Filtrados")
+        st.dataframe(df_act, use_container_width=True)
+    else:
+        st.error("Error al procesar el archivo seleccionado. Asegúrate de que tenga las hojas correctas.")
