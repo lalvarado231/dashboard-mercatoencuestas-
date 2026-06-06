@@ -10,9 +10,13 @@ st.markdown("---")
 # Meta u Objetivo del Grupo para el Semáforo de Calificaciones
 META_CALIFICACION = 4.6
 
-# 1. FUNCIÓN INTELIGENTE CON OPTIMIZACIÓN DE CACHÉ LIGERA (Evita que se quede en Running...)
-@st.cache_data(hash_funcs={str: lambda x: x}, show_spinner=False)  
+# 1. FUNCIÓN INTELIGENTE CORREGIDA (Cambia dinámicamente según el archivo seleccionado)
+@st.cache_data(show_spinner=False)  
 def procesar_excel(archivo_path):
+    # Validamos que el archivo realmente exista antes de intentar leerlo
+    if not os.path.exists(archivo_path):
+        return None
+        
     try:
         xls = pd.ExcelFile(archivo_path)
     except:
@@ -64,7 +68,7 @@ else:
         index=def_idx
     )
 
-    # Cargar Datos Base
+    # Cargar Datos Base Dinámicos
     df_actual_raw = procesar_excel(archivo_actual)
     
     if df_actual_raw is not None:
@@ -77,28 +81,14 @@ else:
         if col_calif in df_actual_completo.columns:
             df_actual_completo[col_calif] = pd.to_numeric(df_actual_completo[col_calif], errors='coerce')
 
-        # Filtro 1: Sucursal/Unidad
+        # Filtro Único: Sucursal/Unidad
         unidades = sorted(df_actual_completo['Restaurante_Origen'].unique())
         sel_unidades = st.sidebar.multiselect("🏢 Filtrar por Unidades:", unidades, default=unidades)
         
+        # Filtrado de datos del periodo actual
         df_act = df_actual_completo[df_actual_completo['Restaurante_Origen'].isin(sel_unidades)].copy()
 
-        # --- BUSCADOR INDIVIDUAL DE MESEROS ---
-        st.sidebar.markdown("---")
-        st.sidebar.header("🔍 Auditoría de Colaborador")
-        
-        lista_meseros = ["TODOS LOS MESEROS"]
-        if col_mesero in df_act.columns:
-            meseros_unicos = sorted(df_act[col_mesero].dropna().unique())
-            lista_meseros.extend(meseros_unicos)
-            
-        sel_mesero = st.sidebar.selectbox("👤 Selecciona un Mesero Específico:", lista_meseros, index=0)
-
-        # Si se selecciona un mesero, filtramos toda la información por él
-        if sel_mesero != "TODOS LOS MESEROS":
-            df_act = df_act[df_act[col_mesero] == sel_mesero].copy()
-
-        # Cargar semana anterior si aplica
+        # Cargar semana anterior si aplica para las comparativas
         df_ant = None
         if archivo_anterior != "Ninguno (Ver solo reporte actual)":
             df_anterior_raw = procesar_excel(archivo_anterior)
@@ -107,15 +97,9 @@ else:
                 if col_calif in df_anterior_completo.columns:
                     df_anterior_completo[col_calif] = pd.to_numeric(df_anterior_completo[col_calif], errors='coerce')
                 df_ant = df_anterior_completo[df_anterior_completo['Restaurante_Origen'].isin(sel_unidades)].copy()
-                if sel_mesero != "TODOS LOS MESEROS":
-                    df_ant = df_ant[df_ant[col_mesero] == sel_mesero].copy()
 
-        # --- SECCIÓN TÍTULO DINÁMICO ---
-        if sel_mesero == "TODOS LOS MESEROS":
-            st.subheader("📈 Rendimiento e Indicadores Claves (Visión General)")
-        else:
-            st.markdown(f"### 👤 Expediente de Servicio: **{sel_mesero}**")
-            st.info(f"Mostrando únicamente las encuestas y métricas donde participó este colaborador.")
+        # --- SECCIÓN TÍTULO GENERAL ---
+        st.subheader("📈 Rendimiento e Indicadores Claves (Visión General)")
 
         # --- SECCIÓN 1: MÉTRICAS GENERALES CON SEMÁFORO DE OBJETIVOS ---
         m1, m2, m3, m4 = st.columns(4)
@@ -131,7 +115,7 @@ else:
             delta=f"{diff_total:+d} vs anterior" if diff_total is not None else None
         )
         
-        # Métrica 2: Promedio de Estrellas
+        # Métrica 2: Promedio de Estrellas Global
         if col_calif in df_act.columns:
             prom_act = df_act[col_calif].mean()
             diff_prom = None
@@ -147,11 +131,11 @@ else:
                     delta=f"{diff_prom:+.2f} ⭐" if diff_prom is not None else None
                 )
                 if prom_act >= META_CALIFICACION:
-                    st.success(f"🟢 **Semáforo: Excelente.** Supera el objetivo de {META_CALIFICACION} ⭐")
+                    st.success(f"🟢 **Semáforo Global: Excelente.** Supera el objetivo de {META_CALIFICACION} ⭐")
                 elif prom_act >= 4.3:
-                    st.warning(f"🟡 **Semáforo: En Observación.** Cerca de la meta ({prom_act:.2f}/{META_CALIFICACION})")
+                    st.warning(f"🟡 **Semáforo Global: En Observación.** Cerca de la meta ({prom_act:.2f}/{META_CALIFICACION})")
                 else:
-                    st.error(f"🔴 **Semáforo: Alerta Crítica.** Por debajo del estándar operativo.")
+                    st.error(f"🔴 **Semáforo Global: Alerta Crítica.** Por debajo del estándar operativo.")
             else:
                 m2.metric("Promedio Calificación", "N/A")
         else:
@@ -174,72 +158,47 @@ else:
         else:
             m3.metric("Alertas Críticas", "0")
 
-        # Métrica 4: Participación
-        if sel_mesero == "TODOS LOS MESEROS":
-            meseros_act = df_act[col_mesero].dropna().nunique() if col_mesero in df_act.columns else 0
-            diff_meseros = None
-            if df_ant is not None and col_mesero in df_ant.columns:
-                diff_meseros = meseros_act - df_ant[col_mesero].dropna().nunique()
-            m4.metric(
-                label="Meseros Evaluados", 
-                value=meseros_act, 
-                delta=f"{diff_meseros:+d} integrantes" if diff_meseros is not None else None
-            )
-        else:
-            total_sucursales = len(df_actual_completo[df_actual_completo['Restaurante_Origen'].isin(sel_unidades)])
-            porcentaje_participacion = (total_act / total_sucursales * 100) if total_sucursales > 0 else 0
-            m4.metric(
-                label="Cuota de Captura", 
-                value=f"{porcentaje_participacion:.1f}%"
-            )
+        # Métrica 4: Total de Personal Evaluado
+        meseros_act = df_act[col_mesero].dropna().nunique() if col_mesero in df_act.columns else 0
+        diff_meseros = None
+        if df_ant is not None and col_mesero in df_ant.columns:
+            diff_meseros = meseros_act - df_ant[col_mesero].dropna().nunique()
+        m4.metric(
+            label="Meseros Evaluados", 
+            value=meseros_act, 
+            delta=f"{diff_meseros:+d} integrantes" if diff_meseros is not None else None
+        )
 
         st.markdown("---")
 
-        # --- SECCIÓN 2: GRÁFICOS DINÁMICOS ---
+        # --- SECCIÓN 2: GRÁFICOS GENERALES ---
         st.subheader("🏆 Análisis Visual del Periodo")
         
-        if sel_mesero == "TODOS LOS MESEROS":
-            t1, t2 = st.columns(2)
-            with t1:
-                st.markdown("##### 🔝 Top 10 Meseros con Mayor Volumen de Encuestas")
-                if col_mesero in df_act.columns and not df_act[col_mesero].dropna().empty:
-                    top_volumen = df_act[col_mesero].value_counts().nlargest(10).reset_index()
-                    top_volumen.columns = ['Mesero', 'Cantidad']
-                    fig_vol = px.bar(top_volumen, x='Cantidad', y='Mesero', orientation='h', 
-                                     color='Cantidad', color_continuous_scale='Blues', text_auto=True)
-                    fig_vol.update_layout(yaxis={'categoryorder':'total ascending'})
-                    st.plotly_chart(fig_vol, use_container_width=True)
-            with t2:
-                st.markdown("##### ⭐ Top 10 Meseros con Mejor Calificación Promedio")
-                if col_mesero in df_act.columns and col_calif in df_act.columns and not df_act[col_mesero].dropna().empty:
-                    conteo_votos = df_act[col_mesero].value_counts()
-                    meseros_activos = conteo_votos[conteo_votos >= 2].index
-                    df_meseros_activos = df_act[df_act[col_mesero].isin(meseros_activos)]
-                    
-                    if not df_meseros_activos.empty:
-                        top_calif = df_meseros_activos.groupby(col_mesero)[col_calif].mean().nlargest(10).reset_index()
-                        top_calif.columns = ['Mesero', 'Promedio']
-                        fig_cal = px.bar(top_calif, x='Promedio', y='Mesero', orientation='h',
-                                         color='Promedio', color_continuous_scale='Reds', text_auto='.2f', range_x=[0,5])
-                        fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
-                        st.plotly_chart(fig_cal, use_container_width=True)
-        else:
-            g1, g2 = st.columns(2)
-            with g1:
-                st.markdown(f"##### 📊 Histograma de Calificaciones para {sel_mesero}")
-                if col_calif in df_act.columns and len(df_act) > 0:
-                    df_dist = df_act[col_calif].value_counts().reset_index()
-                    df_dist.columns = ['Estrellas', 'Conteo']
-                    fig_dist = px.bar(df_dist, x='Estrellas', y='Conteo', text_auto=True,
-                                      color='Estrellas', color_continuous_scale='Gold', range_x=[0.5, 5.5])
-                    st.plotly_chart(fig_dist, use_container_width=True)
-            with g2:
-                st.markdown("##### 🏢 Desempeño por Sucursal asignada")
-                df_suc = df_act.groupby('Restaurante_Origen')[col_calif].agg(['count', 'mean']).reset_index()
-                df_suc.columns = ['Restaurante', 'Encuestas', 'Promedio']
-                fig_suc = px.bar(df_suc, x='Restaurante', y='Promedio', text=df_suc['Encuestas'].apply(lambda x: f"{x} encuestas"),
-                                 color='Promedio', color_continuous_scale='Teal', range_y=[0,5])
-                st.plotly_chart(fig_suc, use_container_width=True)
+        t1, t2 = st.columns(2)
+        with t1:
+            st.markdown("##### 🔝 Top 10 Meseros con Mayor Volumen de Encuestas")
+            if col_mesero in df_act.columns and not df_act[col_mesero].dropna().empty:
+                top_volumen = df_act[col_mesero].value_counts().nlargest(10).reset_index()
+                top_volumen.columns = ['Mesero', 'Cantidad']
+                fig_vol = px.bar(top_volumen, x='Cantidad', y='Mesero', orientation='h', 
+                                 color='Cantidad', color_continuous_scale='Blues', text_auto=True)
+                fig_vol.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_vol, use_container_width=True)
+                
+        with t2:
+            st.markdown("##### ⭐ Top 10 Meseros con Mejor Calificación Promedio")
+            if col_mesero in df_act.columns and col_calif in df_act.columns and not df_act[col_mesero].dropna().empty:
+                conteo_votos = df_act[col_mesero].value_counts()
+                meseros_activos = conteo_votos[conteo_votos >= 2].index
+                df_meseros_activos = df_act[df_act[col_mesero].isin(meseros_activos)]
+                
+                if not df_meseros_activos.empty:
+                    top_calif = df_meseros_activos.groupby(col_mesero)[col_calif].mean().nlargest(10).reset_index()
+                    top_calif.columns = ['Mesero', 'Promedio']
+                    fig_cal = px.bar(top_calif, x='Promedio', y='Mesero', orientation='h',
+                                     color='Promedio', color_continuous_scale='Reds', text_auto='.2f', range_x=[0,5])
+                    fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_cal, use_container_width=True)
 
         # --- SECCIÓN 3: TABLA DE COMENTARIOS NEGATIVOS ---
         if col_calif in df_act.columns:
