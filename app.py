@@ -10,8 +10,8 @@ st.markdown("---")
 # Meta u Objetivo del Grupo para el Semáforo de Calificaciones
 META_CALIFICACION = 4.6
 
-# 1. FUNCIÓN INTELIGENTE CON CACHÉ (Optimiza la velocidad drásticamente)
-@st.cache_data(ttl=3600)  # Guarda los datos en memoria por 1 hora o hasta que cambies el archivo en GitHub
+# 1. FUNCIÓN INTELIGENTE CON CACHÉ (Ajustada sin alertas visuales molestas)
+@st.cache_data(show_spinner=False)  
 def procesar_excel(archivo_path):
     try:
         xls = pd.ExcelFile(archivo_path)
@@ -63,7 +63,7 @@ else:
         index=def_idx
     )
 
-    # Cargar Datos Base (Usando la función con caché)
+    # Cargar Datos Base
     df_actual_completo = procesar_excel(archivo_actual)
     
     if df_actual_completo is not None:
@@ -95,7 +95,7 @@ else:
         if sel_mesero != "TODOS LOS MESEROS":
             df_act = df_act[df_act[col_mesero] == sel_mesero].copy()
 
-        # Cargar semana anterior si aplica (también usa caché)
+        # Cargar semana anterior si aplica
         df_ant = None
         if archivo_anterior != "Ninguno (Ver solo reporte actual)":
             df_anterior_completo = procesar_excel(archivo_anterior)
@@ -247,3 +247,8 @@ else:
                 st.dataframe(malos_comentarios[columnas_existentes], use_container_width=True)
 
         # --- SECCIÓN 4: REVISIÓN GLOBAL DE DATOS ---
+        st.markdown("---")
+        st.subheader("📋 Consolidado de Datos Filtrados")
+        st.dataframe(df_act, use_container_width=True)
+    else:
+        st.error("Error al procesar el archivo seleccionado. Asegúrate de que tenga las hojas correctas.")
