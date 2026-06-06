@@ -315,8 +315,13 @@ else:
         if len(df_act_visual) == 0:
             st.warning(f"No hay registros específicos que entren en la categoría {opcion_semaforo} para los días seleccionados.")
         else:
-            # Incluimos la nueva columna NPS al final de la tabla para que puedas auditarla individualmente
-            columnas_finales = [c for c in ['Restaurante_Origen', col_mesero, col_calif, col_comentario, col_nps, 'Submitted_at'] if c in df_act_visual.columns or c == col_nps]
+            # Lista de columnas validadas de forma dinámica e inclusiva
+            columnas_finales = ['Restaurante_Origen', col_mesero, col_calif, col_comentario]
+            if col_nps in df_act_visual.columns:
+                columnas_finales.append(col_nps)
+            if 'Submitted at' in df_act_visual.columns:
+                columnas_finales.append('Submitted at')
+                
             st.dataframe(df_act_visual[columnas_finales], use_container_width=True)
     else:
         st.error("Error al procesar la estructura del archivo. Revisa que sea el CSV correcto descargado de Tally.")
