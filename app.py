@@ -62,10 +62,21 @@ else:
         df_completo = df_raw.copy()
         
         col_mesero = 'Selecciona a la persona que te atendió / Select the person who assisted you'
-        col_calif = 'Califica la atención recibida / How would you rate your experience?'
         col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
         
-        # Corrección de lectura segura de la columna de calificación (estrellas)
+        # --- BÚSQUEDA INTELIGENTE Y FLEXIBLE DE LA COLUMNA DE CALIFICACIÓN ---
+        col_calif = None
+        for col in df_completo.columns:
+            # Si contiene "califica" y "atención" o "rate your experience", esa es nuestra columna de estrellas
+            if ('califica' in col.lower() and 'atención' in col.lower()) or 'rate your experience' in col.lower():
+                col_calif = col
+                break
+        
+        # Si por alguna razón cambió radicalmente, usamos el nombre original como respaldo
+        if col_calif is None:
+            col_calif = 'Califica la atención recibida / How would you rate your experience?'
+        
+        # Convertir la columna a números de forma segura
         if col_calif in df_completo.columns:
             df_completo[col_calif] = pd.to_numeric(df_completo[col_calif], errors='coerce')
 
