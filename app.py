@@ -252,5 +252,33 @@ else:
         st.markdown("---")
         st.subheader("📊 Análisis Desglosado por Unidades y Colaboradores")
         
-        if len(
+        if len(df_act_filtrado) == 0:
+            st.warning("📋 No existen encuestas registradas con las calificaciones seleccionadas en este periodo.")
+        else:
+            g1, g2 = st.columns(2)
+            
+            with g1:
+                st.markdown("##### 🏢 Volumen de Encuestas por Unidad")
+                df_unidades = df_act_filtrado['Restaurante_Origen'].value_counts().reset_index()
+                df_unidades.columns = ['Unidad', 'Encuestas']
+                fig_uni = px.bar(df_unidades, x='Encuestas', y='Unidad', orientation='h', color='Encuestas', color_continuous_scale='Teal', text_auto=True)
+                fig_uni.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_uni, use_container_width=True)
+            
+            with g2:
+                st.markdown("##### ⭐ Top Colaboradores por Calificación Promedio")
+                if col_mesero in df_act_filtrado.columns and col_calif in df_act_filtrado.columns and not df_act_filtrado[col_mesero].dropna().empty:
+                    top_calif = df_act_filtrado.groupby(col_mesero)[col_calif].mean().nlargest(10).reset_index()
+                    top_calif.columns = ['Colaborador', 'Promedio ⭐']
+                    fig_cal = px.bar(top_calif, x='Promedio ⭐', y='Colaborador', orientation='h', color='Promedio ⭐', color_continuous_scale='Reds', text_auto='.2f', range_x=[0,5])
+                    fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_cal, use_container_width=True)
+                else:
+                    st.info("Sin calificaciones disponibles.")
+
+        st.markdown("---")
+        st.subheader("📋 Registro Total de Encuestas en el Periodo")
+        columnas_deseadas = ['Restaurante_Origen', col_mesero, col_calif, col_nps_nueva, col_comentario, 'Fecha_Envio']
+        columnas_finales = [c for c in columnas_deseadas if c in df_act_filtrado.columns]
+        st.dataframe(df_act_filtrado[columnas_finales], use_container_width=True)
         
