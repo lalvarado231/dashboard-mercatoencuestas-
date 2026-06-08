@@ -79,7 +79,17 @@ else:
         col_mesero = 'Selecciona a la persona que te atendió / Select the person who assisted you'
         col_calif = 'Califica la atención recibida / How would you rate your experience?'
         col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
-        col_nps = '¿Qué tan probable es que nos recomiende a un familiar, amigo o colega? /How likely are you to recommend us to a friend, family member, or colleague?'
+        
+        # Buscador automático e inteligente para la columna de NPS (evita errores por espacios o diagonales)
+        col_nps = None
+        for col in df_completo.columns:
+            if 'recomiende' in col.lower() or 'likely are you to recommend' in col.lower():
+                col_nps = col
+                break
+        
+        # Si por alguna razón no la encuentra de forma dinámica, asigna el texto con el espacio correcto
+        if col_nps is None:
+            col_nps = '¿Qué tan probable es que nos recomiende a un familiar, amigo o colega? / How likely are you to recommend us to a friend, family member, or colleague?'
 
         if col_calif in df_completo.columns:
             df_completo[col_calif] = pd.to_numeric(df_completo[col_calif], errors='coerce')
@@ -216,112 +226,4 @@ else:
 
         # Métrica 4: Alertas Críticas (1-2 ⭐)
         if col_calif in df_act.columns:
-            alertas_act = len(df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif]))
-            alertas_ant = len(df_ant[df_ant[col_calif] <= 2].dropna(subset=[col_calif])) if len(df_ant) > 0 else 0
-            diff_alertas = alertas_act - alertas_ant
-            m4.metric(
-                label="Alertas Críticas (1-2 ⭐)", 
-                value=alertas_act, 
-                delta=f"{diff_alertas:+d} quejas",
-                delta_color="inverse"
-            )
-        else:
-            m4.metric("Alertas Críticas", "0")
-
-        # Métrica 5: Total de Personal Evaluado
-        meseros_act = df_act[col_mesero].dropna().nunique() if (col_mesero in df_act.columns and len(df_act) > 0) else 0
-        meseros_ant = df_ant[col_mesero].dropna().nunique() if (col_mesero in df_ant.columns and len(df_ant) > 0) else 0
-        diff_meseros = meseros_act - meseros_ant
-        m5.metric(
-            label="Meseros Evaluados", 
-            value=meseros_act, 
-            delta=f"{diff_meseros:+d} integrantes"
-        )
-
-        # Semáforo de Texto General en base al promedio de estrellas del periodo evaluado
-        if prom_act is not None and not pd.isna(prom_act):
-            if prom_act >= META_CALIFICACION:
-                st.success(f"🟢 **Estatus del Periodo Evaluado: Excelente.** Promedio de {prom_act:.2f} ⭐")
-            elif prom_act >= 4.3:
-                st.warning(f"🟡 **Estatus del Periodo Evaluado: En Observación.** Promedio de {prom_act:.2f} ⭐")
-            else:
-                st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** Promedio de {prom_act:.2f} ⭐")
-
-        st.markdown("---")
-
-        # --- SECCIÓN 2: GRÁFICOS DINÁMICOS DEL PERIODO ACTUAL ---
-        st.subheader("🏆 Análisis Visual del Periodo Actual Seleccionado")
-        
-        if len(df_act) == 0:
-            st.warning("📋 No existen encuestas registradas para el Periodo Actual en los filtros seleccionados.")
-        else:
-            g1, g2, g3 = st.columns(3)
-            
-            with g1:
-                st.markdown("##### 🏢 Volumen de Encuestas por Unidad")
-                df_unidades = df_act['Restaurante_Origen'].value_counts().reset_index()
-                df_unidades.columns = ['Unidad', 'Encuestas']
-                fig_uni = px.bar(df_unidades, x='Encuestas', y='Unidad', orientation='h',
-                                 color='Encuestas', color_continuous_scale='Teal', text_auto=True)
-                fig_uni.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_uni, use_container_width=True)
-            
-            with g2:
-                st.markdown("##### 🔝 Top 10 Meseros con Mayor Volumen")
-                if col_mesero in df_act.columns and not df_act[col_mesero].dropna().empty:
-                    top_volumen = df_act[col_mesero].value_counts().nlargest(10).reset_index()
-                    top_volumen.columns = ['Mesero', 'Cantidad']
-                    fig_vol = px.bar(top_volumen, x='Cantidad', y='Mesero', orientation='h', 
-                                     color='Cantidad', color_continuous_scale='Blues', text_auto=True)
-                    fig_vol.update_layout(yaxis={'categoryorder':'total ascending'})
-                    st.plotly_chart(fig_vol, use_container_width=True)
-                else:
-                    st.info("Sin datos de colaboradores.")
-                    
-            with g3:
-                st.markdown("##### ⭐ Top 10 Meseros con Mejor Calificación")
-                if col_mesero in df_act.columns and col_calif in df_act.columns and not df_act[col_mesero].dropna().empty:
-                    conteo_votos = df_act[col_mesero].value_counts()
-                    meseros_activos = conteo_votos.index
-                    df_meseros_activos = df_act[df_act[col_mesero].isin(meseros_activos)]
-                    
-                    if not df_meseros_activos.empty:
-                        top_calif = df_meseros_activos.groupby(col_mesero)[col_calif].mean().nlargest(10).reset_index()
-                        top_calif.columns = ['Mesero', 'Promedio']
-                        fig_cal = px.bar(top_calif, x='Promedio', y='Mesero', orientation='h',
-                                         color='Promedio', color_continuous_scale='Reds', text_auto='.2f', range_x=[0,5])
-                        fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
-                        st.plotly_chart(fig_cal, use_container_width=True)
-                    else:
-                        st.info("Sin promedios suficientes.")
-                else:
-                    st.info("Sin calificaciones disponibles.")
-
-        # --- SECCIÓN 3: TABLA DE COMENTARIOS NEGATIVOS EN EL PERIODO ACTUAL ---
-        if col_calif in df_act.columns and len(df_act) > 0:
-            malos_comentarios = df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif])
-            if not malos_comentarios.empty:
-                st.markdown("---")
-                st.subheader("⚠️ Atención Inmediata: Comentarios Negativos (Periodo Actual)")
-                columnas_existentes = [c for c in ['Restaurante_Origen', col_mesero, col_calif, col_comentario] if c in df_act.columns]
-                st.dataframe(malos_comentarios[columnas_existentes], use_container_width=True)
-
-        # --- SECCIÓN 4: REVISIÓN GLOBAL / AUDITORÍA DE DATOS ---
-        st.markdown("---")
-        st.subheader("📋 Consolidado de Datos Auditados (Filtrado por Semáforo)")
-        if "🔵" not in opcion_semaforo:
-            st.info(f"Filtro de Semáforo Activo: Mostrando únicamente registros en **{opcion_semaforo[2:]}** del periodo actual.")
-        
-        if len(df_act_visual) == 0:
-            st.warning(f"No hay registros específicos que entren en la categoría {opcion_semaforo} para los días seleccionados.")
-        else:
-            # Lista de columnas validadas de forma dinámica e inclusiva
-            columnas_finales = ['Restaurante_Origen', col_mesero, col_calif, col_comentario]
-            if col_nps in df_act_visual.columns:
-                columnas_finales.append(col_nps)
-            if 'Submitted at' in df_act_visual.columns:
-                columnas_finales.append('Submitted at')
-                
-            st.dataframe(df_act_visual[columnas_finales], use_container_width=True)
-    else:
-        st.error("Error al procesar la estructura del archivo. Revisa que sea el CSV correcto descargado de Tally.")
+            alertas_act = len(df
