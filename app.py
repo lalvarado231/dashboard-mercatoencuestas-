@@ -4,22 +4,29 @@ import plotly.express as px
 import os
 from datetime import datetime, timedelta
 
+# Configuración de la página con el nuevo enfoque profesional
 st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wide", page_icon="📊")
-st.title("📊 Dashboard Operaciones, Control de Experiencia & NPS 360° - Il Mercato Gentiloni")
+
+# Título definitivo con ortografía y acentuación totalmente correcta
+st.title("📊 Dashboard de Operaciones, Control de Experiencia & NPS 360°")
+st.subheader("🏢 Centro de Inteligencia Operativa — Il Mercato Gentiloni")
 st.markdown("---")
 
 # 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA HISTÓRICO Y NUEVO)
 def calcular_nps_hibrido(df, col_nps, col_estrellas):
+    if not col_nps and not col_estrellas:
+        return None
+        
     total_respuestas = 0
     promotores = 0
     detractores = 0
     
     for _, fila in df.iterrows():
-        voto_nuevo = pd.to_numeric(fila.get(col_nps), errors='coerce')
-        voto_viejo = pd.to_numeric(fila.get(col_estrellas), errors='coerce')
+        voto_nuevo = pd.to_numeric(fila.get(col_nps), errors='coerce') if col_nps else None
+        voto_viejo = pd.to_numeric(fila.get(col_estrellas), errors='coerce') if col_estrellas else None
         
         # Caso A: Tiene el formato nuevo (0 al 10)
-        if not pd.isna(voto_nuevo):
+        if voto_nuevo is not None and not pd.isna(voto_nuevo):
             total_respuestas += 1
             if voto_nuevo >= 9:
                 promotores += 1
@@ -27,7 +34,7 @@ def calcular_nps_hibrido(df, col_nps, col_estrellas):
                 detractores += 1
                 
         # Caso B: No tiene formato nuevo, pero tiene el histórico de 5 estrellas
-        elif not pd.isna(voto_viejo):
+        elif voto_viejo is not None and not pd.isna(voto_viejo):
             total_respuestas += 1
             if voto_viejo == 5:      
                 promotores += 1
@@ -60,9 +67,14 @@ def procesar_tally_csv(archivo_path):
     # Limpieza estricta de espacios en los nombres de las columnas para evitar fallas de Tally
     df.columns = df.columns.str.strip()
     
-    col_origen_unidad = "Selecciona la unidad que visitaste / Select the Il Mercato Gentiloni location you visited"
-    
-    if col_origen_unidad in df.columns:
+    # Mapeo tolerante e inteligente de las columnas principales
+    col_origen_unidad = None
+    for col in df.columns:
+        if 'unidad que visitaste' in col.lower() or 'location you visited' in col.lower():
+            col_origen_unidad = col
+            break
+            
+    if col_origen_unidad and col_origen_unidad in df.columns:
         df['Restaurante_Origen'] = df[col_origen_unidad].astype(str).str.strip().str.upper()
         df['Restaurante_Origen'] = df['Restaurante_Origen'].replace({'ÁLAMO': 'ALAMO'})
         
@@ -96,189 +108,34 @@ else:
     if df_raw is not None:
         df_completo = df_raw.copy()
         
-        col_mesero = 'Selecciona a la persona que te atendió / Select the person who assisted you'
-        col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
-        
-        # Mapeo dinámico tolerante a variaciones de Tally (búsqueda parcial de texto)
+        # Mapeo dinámico y tolerante por texto parcial para evitar KeyErrors
+        col_mesero = None
+        col_comentario = None
         col_calif = None
         col_nps_nueva = None
         
         for c in df_completo.columns:
-            if 'califica la atención' in c.lower() or 'how would you rate your experience' in c.lower():
+            c_low = c.lower()
+            if 'persona que te atendió' in c_low or 'who assisted you' in c_low:
+                col_mesero = c
+            elif 'cómo fue tu experiencia' in c_low or 'about your visit' in c_low:
+                col_comentario = c
+            elif 'califica la atención' in c_low or 'rate your experience' in c_low:
                 col_calif = c
-            if 'probable es que nos recomiende' in c.lower() or 'likely are you to recommend' in c.lower():
+            elif 'probable es que nos recomiende' in c_low or 'likely are you to recommend' in c_low:
                 col_nps_nueva = c
                 
-        # Respaldos en caso de no encontrarse por texto dinámico
-        if not col_calif:
-            col_calif = 'Califica la atención recibida / How would you rate your experience?'
-        if not col_nps_nueva:
-            col_nps_nueva = '¿Qué tan probable es que nos recomiende a un familiar, amigo o colega? /How likely are you to recommend us to a friend, family member, or colleague?'
+        # Respaldos de seguridad por si falla la detección por texto parcial
+        if not col_mesero: col_mesero = 'Selecciona a la persona que te atendió / Select the person who assisted you'
+        if not col_comentario: col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
+        if not col_calif: col_calif = 'Califica la atención recibida / How would you rate your experience?'
+        if not col_nps_nueva: col_nps_nueva = '¿Qué tan probable es que nos recomiende a un familiar, amigo o colega? /How likely are you to recommend us to a friend, family member, or colleague?'
 
+        # Forzar conversión numérica de la calificación general
         if col_calif in df_completo.columns:
             df_completo[col_calif] = pd.to_numeric(df_completo[col_calif], errors='coerce')
 
         # --- CONFIGURACIÓN DE FECHAS ---
         fechas_validas = df_completo['Fecha_Envio'].dropna()
         if not fechas_validas.empty:
-            min_fecha = min(fechas_validas)
-            max_fecha = max(fechas_validas)
-            
-            def_act_inicio = max_fecha - timedelta(days=6)
-            def_act_fin = max_fecha
-            def_ant_inicio = def_act_inicio - timedelta(days=7)
-            def_ant_fin = def_act_inicio - timedelta(days=1)
-        else:
-            min_fecha = datetime.today().date() - timedelta(days=60)
-            max_fecha = datetime.today().date()
-            def_act_inicio, def_act_fin = min_fecha + timedelta(days=30), max_fecha
-            def_ant_inicio, def_ant_fin = min_fecha, min_fecha + timedelta(days=29)
-
-        # --- BARRA LATERAL ---
-        st.sidebar.header("📅 1. Periodo Actual (Evaluado)")
-        rango_actual = st.sidebar.date_input(
-            "Selecciona rango actual:",
-            value=(def_act_inicio, def_act_fin),
-            min_value=min_fecha,
-            max_value=max_fecha,
-            key="actual_range"
-        )
-        
-        st.sidebar.markdown("---")
-        st.sidebar.header("⏳ 2. Periodo Anterior (Comparativo)")
-        rango_anterior = st.sidebar.date_input(
-            "Selecciona rango a comparar:",
-            value=(def_ant_inicio, def_ant_fin),
-            min_value=min_fecha,
-            max_value=max_fecha,
-            key="anterior_range"
-        )
-
-        st.sidebar.markdown("---")
-        st.sidebar.header("🏢 Filtro de Unidades")
-        unidades = sorted([u for u in df_completo['Restaurante_Origen'].unique() if u != 'NAN'])
-        sel_unidades = st.sidebar.multiselect("Selecciona Unidades:", unidades, default=unidades)
-
-        # --- FILTRO POR CALIFICACIÓN SEGURO (ESTRELLAS DEL 1 AL 5) ---
-        st.sidebar.markdown("---")
-        st.sidebar.header("⭐ Filtro por Calificación")
-        
-        lista_calificaciones = [1, 2, 3, 4, 5]
-        sel_calificaciones = st.sidebar.multiselect(
-            "Mostrar calificaciones:", 
-            options=lista_calificaciones, 
-            default=lista_calificaciones,
-            format_func=lambda x: f"{x} ⭐"
-        )
-
-        # Aplicamos los filtros base a las unidades seleccionadas
-        df_base_unidades = df_completo[df_completo['Restaurante_Origen'].isin(sel_unidades)].copy()
-
-        # Separar por rangos de fechas
-        df_act = pd.DataFrame()
-        if isinstance(rango_actual, tuple) and len(rango_actual) == 2:
-            act_i, act_f = rango_actual
-            df_act = df_base_unidades[(df_base_unidades['Fecha_Envio'] >= act_i) & (df_base_unidades['Fecha_Envio'] <= act_f)].copy()
-
-        df_ant = pd.DataFrame()
-        if isinstance(rango_anterior, tuple) and len(rango_anterior) == 2:
-            ant_i, ant_f = rango_anterior
-            df_ant = df_base_unidades[(df_base_unidades['Fecha_Envio'] >= ant_i) & (df_base_unidades['Fecha_Envio'] <= ant_f)].copy()
-
-        # --- SECCIÓN DE MÉTRICAS ---
-        st.subheader("📈 Rendimiento e Indicadores Claves del Periodo")
-        
-        if len(rango_actual) == 2 and len(rango_anterior) == 2:
-            st.info(f"Análisis: Periodo Actual (**{rango_actual[0].strftime('%d/%m')} al {rango_actual[1].strftime('%d/%m')}**) vs Periodo Anterior (**{rango_anterior[0].strftime('%d/%m')} al {rango_anterior[1].strftime('%d/%m')}**)")
-
-        m1, m2, m3, m4, m5 = st.columns(5)
-        
-        total_act = len(df_act)
-        total_ant = len(df_ant)
-        diff_total = total_act - total_ant
-        m1.metric(label="Total Encuestas", value=f"{total_act} resp.", delta=f"{diff_total:+d} vs periodo ant.")
-        
-        prom_act, prom_ant = None, None
-        if col_calif in df_act.columns and len(df_act) > 0:
-            prom_act = df_act[col_calif].mean()
-        if col_calif in df_ant.columns and len(df_ant) > 0:
-            prom_ant = df_ant[col_calif].mean()
-            
-        if prom_act is not None and not pd.isna(prom_act):
-            diff_prom = (prom_act - prom_ant) if (prom_ant is not None and not pd.isna(prom_ant)) else None
-            m2.metric(label="Promedio Calificación", value=f"{prom_act:.2f} ⭐", delta=f"{diff_prom:+.2f} ⭐" if diff_prom is not None else None)
-        else:
-            m2.metric("Promedio Calificación", "N/A")
-
-        # Índice NPS Híbrido e Inteligente
-        nps_act = calcular_nps_hibrido(df_act, col_nps_nueva, col_calif)
-        nps_ant = calcular_nps_hibrido(df_ant, col_nps_nueva, col_calif)
-        
-        if nps_act is not None:
-            diff_nps = (nps_act - nps_ant) if nps_ant is not None else None
-            m3.metric(label="Índice NPS (Lealtad)", value=f"{nps_act:.1f}%", delta=f"{diff_nps:+.1f}% vs periodo ant." if diff_nps is not None else None)
-        else:
-            m3.metric("Índice NPS (Lealtad)", "N/A")
-
-        if col_calif in df_act.columns:
-            alertas_act = len(df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif]))
-            alertas_ant = len(df_ant[df_ant[col_calif] <= 2].dropna(subset=[col_calif])) if len(df_ant) > 0 else 0
-            diff_alertas = alertas_act - alertas_ant
-            m4.metric(label="Alertas Críticas (1-2 ⭐)", value=alertas_act, delta=f"{diff_alertas:+d} quejas", delta_color="inverse")
-        else:
-            m4.metric("Alertas Críticas", "0")
-
-        meseros_act = df_act[col_mesero].dropna().nunique() if (col_mesero in df_act.columns and len(df_act) > 0) else 0
-        meseros_ant = df_ant[col_mesero].dropna().nunique() if (col_mesero in df_ant.columns and len(df_ant) > 0) else 0
-        diff_meseros = meseros_act - meseros_ant
-        m5.metric(label="Meseros Evaluados", value=meseros_act, delta=f"{diff_meseros:+d} colaboradores")
-
-        # --- SECCIÓN DEL SEMÁFORO INTELIGENTE DE 4 RANGOS ---
-        if prom_act is not None and not pd.isna(prom_act):
-            st.markdown(" ")
-            if prom_act >= 4.8:
-                st.info(f"🔵 **Estatus del Periodo Evaluado: Excelente / Rango Platino.** El promedio general de {prom_act:.2f} ⭐ se encuentra en un nivel de servicio excepcional.")
-            elif prom_act >= 4.5:
-                st.success(f"🟢 **Estatus del Periodo Evaluado: Muy Bueno.** El promedio general de {prom_act:.2f} ⭐ cumple satisfactoriamente con los estándares.")
-            elif prom_act >= 4.2:
-                st.warning(f"🟡 **Estatus del Periodo Evaluado: En Observación.** El promedio general es de {prom_act:.2f} ⭐. Se sugeriría monitorear desvíos.")
-            else:
-                st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** El promedio general cayó a {prom_act:.2f} ⭐. Requiere revisión inmediata de operaciones.")
-
-        # --- APLICACIÓN FILTRADO DE CALIFICACIÓN EXCLUSIVO PARA COMENTARIOS / GRÁFICAS ---
-        df_act_filtrado = df_act[df_act[col_calif].isin(sel_calificaciones)].copy()
-
-        # --- GRÁFICAS Y TABLAS ---
-        st.markdown("---")
-        st.subheader("📊 Análisis Desglosado por Unidades y Colaboradores")
-        
-        if len(df_act_filtrado) == 0:
-            st.warning("📋 No existen encuestas registradas con las calificaciones seleccionadas en este periodo.")
-        else:
-            g1, g2 = st.columns(2)
-            
-            with g1:
-                st.markdown("##### 🏢 Volumen de Encuestas por Unidad")
-                df_unidades = df_act_filtrado['Restaurante_Origen'].value_counts().reset_index()
-                df_unidades.columns = ['Unidad', 'Encuestas']
-                fig_uni = px.bar(df_unidades, x='Encuestas', y='Unidad', orientation='h', color='Encuestas', color_continuous_scale='Teal', text_auto=True)
-                fig_uni.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_uni, use_container_width=True)
-            
-            with g2:
-                st.markdown("##### ⭐ Top Colaboradores por Calificación Promedio")
-                if col_mesero in df_act_filtrado.columns and col_calif in df_act_filtrado.columns and not df_act_filtrado[col_mesero].dropna().empty:
-                    top_calif = df_act_filtrado.groupby(col_mesero)[col_calif].mean().nlargest(10).reset_index()
-                    top_calif.columns = ['Colaborador', 'Promedio ⭐']
-                    fig_cal = px.bar(top_calif, x='Promedio ⭐', y='Colaborador', orientation='h', color='Promedio ⭐', color_continuous_scale='Reds', text_auto='.2f', range_x=[0,5])
-                    fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
-                    st.plotly_chart(fig_cal, use_container_width=True)
-                else:
-                    st.info("Sin calificaciones disponibles.")
-
-        st.markdown("---")
-        st.subheader("📋 Registro Total de Encuestas en el Periodo")
-        columnas_deseadas = ['Restaurante_Origen', col_mesero, col_calif, col_nps_nueva, col_comentario, 'Fecha_Envio']
-        columnas_finales = [c for c in columnas_deseadas if c in df_act_filtrado.columns]
-        st.dataframe(df_act_filtrado[columnas_finales], use_container_width=True)
-        
+            min_fecha = min(fechas
