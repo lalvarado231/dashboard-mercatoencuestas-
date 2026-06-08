@@ -52,9 +52,17 @@ def procesar_tally_csv(archivo_path):
         df['Restaurante_Origen'] = df[col_origen_unidad].astype(str).str.strip().str.upper()
         df['Restaurante_Origen'] = df['Restaurante_Origen'].replace({'ÁLAMO': 'ALAMO'})
         
-        # Convertir la columna de fecha de Tally a formato de fecha real (Date)
-        if 'Submitted at' in df.columns:
-            df['Fecha_Envio'] = pd.to_datetime(df['Submitted at'], errors='coerce').dt.date
+        # Encontrar dinámicamente la columna de fecha de envío en Tally (evita errores de mayúsculas/minúsculas)
+        col_fecha_tally = None
+        for col in df.columns:
+            if 'submitted' in col.lower() or 'fecha' in col.lower():
+                col_fecha_tally = col
+                break
+        
+        if col_fecha_tally and col_fecha_tally in df.columns:
+            df['Fecha_Envio'] = pd.to_datetime(df[col_fecha_tally], errors='coerce').dt.date
+        else:
+            df['Fecha_Envio'] = datetime.today().date()
             
         return df.copy()
         
@@ -80,17 +88,13 @@ else:
         col_calif = 'Califica la atención recibida / How would you rate your experience?'
         col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
         
-        # Buscador automático e inteligente para la columna de NPS (evita errores por espacios o diagonales)
+        # Buscador automático para la columna de NPS
         col_nps = None
         for col in df_completo.columns:
-            if 'recomiende' in col.lower() or 'likely are you to recommend' in col.lower():
+            if 'recomiende' in col.lower() or 'likely are you to recommend' in col.lower() or 'nps' in col.lower():
                 col_nps = col
                 break
         
-        # Si por alguna razón no la encuentra de forma dinámica, asigna el texto con el espacio correcto
-        if col_nps is None:
-            col_nps = '¿Qué tan probable es que nos recomiende a un familiar, amigo o colega? / How likely are you to recommend us to a friend, family member, or colleague?'
-
         if col_calif in df_completo.columns:
             df_completo[col_calif] = pd.to_numeric(df_completo[col_calif], errors='coerce')
 
@@ -164,7 +168,7 @@ else:
             ant_i, ant_f = rango_anterior
             df_ant = df_base_unidades[(df_base_unidades['Fecha_Envio'] >= ant_i) & (df_base_unidades['Fecha_Envio'] <= ant_f)].copy()
 
-        # Aplicar Semáforo únicamente a la visualización y tablas específicas del final (para no romper métricas)
+        # Aplicar Semáforo únicamente a la visualización y tablas específicas del final
         df_act_visual = df_act.copy()
         if col_calif in df_act_visual.columns:
             if "🟢" in opcion_semaforo:
@@ -177,7 +181,6 @@ else:
         # --- SECCIÓN 1: MÉTRICAS COMPARATIVAS INTELIGENTES (DELTAS) ---
         st.subheader("📈 Comparativa de Rendimiento Operativo")
         
-        # Mostrar confirmación de rangos arriba
         if len(rango_actual) == 2 and len(rango_anterior) == 2:
             st.info(f"Análisis: Periodo Actual (**{rango_actual[0].strftime('%d/%m')} al {rango_actual[1].strftime('%d/%m')}**) vs Periodo Anterior (**{rango_anterior[0].strftime('%d/%m')} al {rango_anterior[1].strftime('%d/%m')}**)")
 
@@ -187,11 +190,7 @@ else:
         total_act = len(df_act)
         total_ant = len(df_ant)
         diff_total = total_act - total_ant
-        m1.metric(
-            label="Total Encuestas", 
-            value=f"{total_act} resp.", 
-            delta=f"{diff_total:+d} vs periodo ant."
-        )
+        m1.metric(label="Total Encuestas", value=f"{total_act} resp.", delta=f"{diff_total:+d} vs periodo ant.")
         
         # Métrica 2: Promedio de Estrellas Global
         prom_act, prom_ant = None, None
@@ -202,28 +201,37 @@ else:
             
         if prom_act is not None and not pd.isna(prom_act):
             diff_prom = (prom_act - prom_ant) if (prom_ant is not None and not pd.isna(prom_ant)) else None
-            m2.metric(
-                label="Promedio Calificación", 
-                value=f"{prom_act:.2f} ⭐", 
-                delta=f"{diff_prom:+.2f} ⭐" if diff_prom is not None else None
-            )
+            m2.metric(label="Promedio Calificación", value=f"{prom_act:.2f} ⭐", delta=f"{diff_prom:+.2f} ⭐" if diff_prom is not None else None)
         else:
             m2.metric("Promedio Calificación", "N/A")
 
         # Métrica 3: ÍNDICE NPS DINÁMICO
-        nps_act = calcular_nps(df_act, col_nps)
-        nps_ant = calcular_nps(df_ant, col_nps)
+        nps_act = calcular_nps(df_act, col_nps) if col_nps else None
+        nps_ant = calcular_nps(df_ant, col_nps) if col_nps else None
         
         if nps_act is not None:
             diff_nps = (nps_act - nps_ant) if nps_ant is not None else None
-            m3.metric(
-                label="Índice NPS (Lealtad)",
-                value=f"{nps_act:.1f}%",
-                delta=f"{diff_nps:+.1f}% vs periodo ant." if diff_nps is not None else None
-            )
+            m3.metric(label="Índice NPS (Lealtad)", value=f"{nps_act:.1f}%", delta=f"{diff_nps:+.1f}% vs periodo ant." if diff_nps is not None else None)
         else:
-            m3.metric("Índice NPS (Lealtad)", "N/A (Sin datos)")
+            m3.metric("Índice NPS (Lealtad)", "N/A (Falta columna en Tally)")
 
         # Métrica 4: Alertas Críticas (1-2 ⭐)
         if col_calif in df_act.columns:
-            alertas_act = len(df
+            alertas_act = len(df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif]))
+            alertas_ant = len(df_ant[df_ant[col_calif] <= 2].dropna(subset=[col_calif])) if len(df_ant) > 0 else 0
+            diff_alertas = alertas_act - alertas_ant
+            m4.metric(label="Alertas Críticas (1-2 ⭐)", value=alertas_act, delta=f"{diff_alertas:+d} quejas", delta_color="inverse")
+        else:
+            m4.metric("Alertas Críticas", "0")
+
+        # Métrica 5: Total de Personal Evaluado
+        meseros_act = df_act[col_mesero].dropna().nunique() if (col_mesero in df_act.columns and len(df_act) > 0) else 0
+        meseros_ant = df_ant[col_mesero].dropna().nunique() if (col_mesero in df_ant.columns and len(df_ant) > 0) else 0
+        diff_meseros = meseros_act - meseros_ant
+        m5.metric(label="Meseros Evaluados", value=meseros_act, delta=f"{diff_meseros:+d} integrantes")
+
+        # Semáforo de Texto General
+        if prom_act is not None and not pd.isna(prom_act):
+            if prom_act >= META_CALIFICACION:
+                st.success(f"🟢 **Estatus del Periodo Evaluado: Excelente.** Promedio de {prom_act:.2f} ⭐")
+            elif prom_act >=
