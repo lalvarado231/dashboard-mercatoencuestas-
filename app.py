@@ -8,9 +8,6 @@ st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wid
 st.title("📊 Dashboard Automatizado con Filtro de Fechas e Indicadores - Il Mercato")
 st.markdown("---")
 
-# Meta u Objetivo del Grupo para el Semáforo de Calificaciones
-META_CALIFICACION = 4.6
-
 # 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA HISTÓRICO Y NUEVO)
 def calcular_nps_hibrido(df, col_nps, col_estrellas):
     total_respuestas = 0
@@ -150,8 +147,25 @@ else:
         unidades = sorted([u for u in df_completo['Restaurante_Origen'].unique() if u != 'NAN'])
         sel_unidades = st.sidebar.multiselect("Selecciona Unidades:", unidades, default=unidades)
 
+        # --- FILTRO ADICIONAL REINCORPORADO: SELECCIÓN POR ESTRELLAS PARA COMENTARIOS ---
+        st.sidebar.markdown("---")
+        st.sidebar.header("⭐ Filtro por Calificación")
+        # Obtenemos las calificaciones disponibles y válidas (números enteros del 1 al 5)
+        lista_calificaciones = sorted([int(x) for x in df_completo[col_calif].dropna().unique() if x in [1, 2, 3, 4, 5]])
+        if not lista_calificaciones:
+            lista_calificaciones = [1, 2, 3, 4, 5]
+            
+        sel_calificaciones = st.sidebar.multiselect(
+            "Mostrar calificaciones:", 
+            options=lista_calificaciones, 
+            default=lista_calificaciones,
+            format_func=lambda x: f"{x} ⭐"
+        )
+
+        # Aplicamos los filtros base a las unidades seleccionadas
         df_base_unidades = df_completo[df_completo['Restaurante_Origen'].isin(sel_unidades)].copy()
 
+        # Separar por rangos de fechas
         df_act = pd.DataFrame()
         if isinstance(rango_actual, tuple) and len(rango_actual) == 2:
             act_i, act_f = rango_actual
@@ -210,7 +224,8 @@ else:
         diff_meseros = meseros_act - meseros_ant
         m5.metric(label="Meseros Evaluados", value=meseros_act, delta=f"{diff_meseros:+d} colaboradores")
 
-        # --- SECCIÓN DEL SEMÁFORO INTELIGENTE (UBICADO ABAJO DE LAS MÉTRICAS) ---
+        # --- SECCIÓN DEL SEMÁFORO INTELIGENTE ---
+        META_CALIFICACION = 4.6
         if prom_act is not None and not pd.isna(prom_act):
             st.markdown(" ")
             if prom_act >= META_CALIFICACION:
@@ -218,38 +233,4 @@ else:
             elif prom_act >= 4.3:
                 st.warning(f"🟡 **Estatus del Periodo Evaluado: En Observación.** El promedio general es de {prom_act:.2f} ⭐. Se sugiere revisar comentarios.")
             else:
-                st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** El promedio general cayó a {prom_act:.2f} ⭐. Requiere revisión inmediata de operaciones.")
-
-        # --- GRÁFICAS Y TABLAS ---
-        st.markdown("---")
-        st.subheader("📊 Análisis Desglosado por Unidades y Colaboradores")
-        
-        if len(df_act) == 0:
-            st.warning("📋 No existen encuestas registradas para el Periodo Actual.")
-        else:
-            g1, g2 = st.columns(2)
-            
-            with g1:
-                st.markdown("##### 🏢 Volumen de Encuestas por Unidad")
-                df_unidades = df_act['Restaurante_Origen'].value_counts().reset_index()
-                df_unidades.columns = ['Unidad', 'Encuestas']
-                fig_uni = px.bar(df_unidades, x='Encuestas', y='Unidad', orientation='h', color='Encuestas', color_continuous_scale='Teal', text_auto=True)
-                fig_uni.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_uni, use_container_width=True)
-            
-            with g2:
-                st.markdown("##### ⭐ Top Colaboradores por Calificación Promedio")
-                if col_mesero in df_act.columns and col_calif in df_act.columns and not df_act[col_mesero].dropna().empty:
-                    top_calif = df_act.groupby(col_mesero)[col_calif].mean().nlargest(10).reset_index()
-                    top_calif.columns = ['Colaborador', 'Promedio ⭐']
-                    fig_cal = px.bar(top_calif, x='Promedio ⭐', y='Colaborador', orientation='h', color='Promedio ⭐', color_continuous_scale='Reds', text_auto='.2f', range_x=[0,5])
-                    fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
-                    st.plotly_chart(fig_cal, use_container_width=True)
-                else:
-                    st.info("Sin calificaciones disponibles.")
-
-        st.markdown("---")
-        st.subheader("📋 Registro Total de Encuestas en el Periodo")
-        columnas_deseadas = ['Restaurante_Origen', col_mesero, col_calif, col_nps_nueva, col_comentario, 'Fecha_Envio']
-        columnas_finales = [c for c in columnas_deseadas if c in df_act.columns]
-        st.dataframe(df_act[columnas_finales], use_container_width=True)
+                st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** El promedio general cayó a {prom_act:.2f} ⭐.
