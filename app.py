@@ -5,32 +5,47 @@ import os
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wide", page_icon="📊")
-st.title("📊 Dashboard con Doble Comparativa y NPS - Il Mercato")
+st.title("📊 Dashboard Unificado con Histórico y NPS - Il Mercato")
 st.markdown("---")
 
 # Meta u Objetivo del Grupo para el Semáforo de Calificaciones
 META_CALIFICACION = 4.6
 
-# 1. FUNCIÓN INTELIGENTE PARA CALCULAR EL NPS OFICIAL (-100 a +100)
-def calcular_nps(df, columna_nps):
-    if columna_nps not in df.columns or len(df) == 0:
-        return None
+# 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA 1-5 Y 0-10)
+def calcular_nps_hibrido(df, col_nps_nueva, col_estrellas_vieja):
+    total_respuestas = 0
+    promotores = 0
+    detractores = 0
     
-    # Convertir directamente a número (ideal para el formato Linear Scale 0-10 de Tally)
-    valores = pd.to_numeric(df[columna_nps], errors='coerce').dropna()
-    total_respuestas = len(valores)
-    
+    # Recorrer fila por fila para rescatar el histórico de forma justa
+    for _, fila in df.iterrows():
+        voto_nuevo = pd.to_numeric(fila.get(col_nps_nueva), errors='coerce')
+        voto_viejo = pd.to_numeric(fila.get(col_estrellas_vieja), errors='coerce')
+        
+        # Caso A: Tiene el formato nuevo (0 al 10)
+        if not pd.isna(voto_nuevo):
+            total_respuestas += 1
+            if voto_nuevo >= 9:
+                promotores += 1
+            elif voto_nuevo <= 6:
+                detractores += 1
+                
+        # Caso B: No tiene formato nuevo, pero tiene el histórico de 5 estrellas
+        elif not pd.isna(voto_viejo):
+            total_respuestas += 1
+            if voto_viejo == 5:      # 5 estrellas equivale a un Promotor (9-10)
+                promotores += 1
+            elif voto_viejo == 4:    # 4 estrellas equivale a un Pasivo (7-8)
+                pass 
+            else:                    # 1, 2 o 3 estrellas equivale a un Detractor (0-6)
+                detractores += 1
+
     if total_respuestas == 0:
         return None
         
-    promotores = len(valores[valores >= 9])
-    detractores = len(valores[valores <= 6])
-    
     pct_promotores = (promotores / total_respuestas) * 100
     pct_detractores = (detractores / total_respuestas) * 100
-    
-    nps_score = pct_promotores - pct_detractores
-    return nps_score
+    return pct_promotores - pct_detractores
 
 # 2. PROCESADOR AUTOMÁTICO DE ARCHIVOS CRUDOS DE TALLY (CSV)
 @st.cache_data(show_spinner=False)  
@@ -52,7 +67,7 @@ def procesar_tally_csv(archivo_path):
         df['Restaurante_Origen'] = df[col_origen_unidad].astype(str).str.strip().str.upper()
         df['Restaurante_Origen'] = df['Restaurante_Origen'].replace({'ÁLAMO': 'ALAMO'})
         
-        # Encontrar dinámicamente la columna de fecha de envío en Tally
+        # Buscar dinámicamente la columna de fecha de envío
         col_fecha_tally = None
         for col in df.columns:
             if 'submitted' in col.lower() or 'fecha' in col.lower():
@@ -72,7 +87,7 @@ def procesar_tally_csv(archivo_path):
 todos_los_archivos = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
 
 if len(todos_los_archivos) == 0:
-    st.error("⚠️ No se encontraron archivos de Tally (.csv) en el repositorio. Por favor sube tu archivo histórico de Tally a GitHub.")
+    st.error("⚠️ No se encontraron archivos de Tally (.csv) en el repositorio. Por favor sube tu archivo completo a GitHub.")
 else:
     todos_los_archivos.sort(reverse=True)
     archivo_actual = todos_los_archivos[0]
@@ -86,16 +101,19 @@ else:
         col_calif = 'Califica la atención recibida / How would you rate your experience?'
         col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
         
-        # Buscador automático ultra-amplio para la nueva columna de escala
-        col_nps = None
+        # Mapeo dinámico de las dos columnas de Tally (La vieja y la nueva de escala lineal)
+        col_nps_nueva = None
+        col_estrellas_vieja = col_calif # La de estrellas coincide con la calificación de atención recibida
+        
         for col in df_completo.columns:
             col_min = col.lower()
-            if 'recomiend' in col_min or 'recommend' in col_min or 'nps' in col_min or 'probable' in col_min:
-                col_nps = col
+            # Identificar la nueva columna lineal que creaste del 0 al 10
+            if ('recomiend' in col_min or 'recommend' in col_min or 'probable' in col_min) and col != col_calif:
+                col_nps_nueva = col
                 break
         
         if col_calif in df_completo.columns:
-            df_completo[col_calif] = pd.to_numeric(df_calif, errors='coerce')
+            df_completo[col_calif] = pd.to_numeric(df_completo[col_calif], errors='coerce')
 
         # --- CONFIGURACIÓN DE FECHAS BASE EN EL ARCHIVO ---
         fechas_validas = df_completo['Fecha_Envio'].dropna()
@@ -167,7 +185,7 @@ else:
             elif "🔴" in opcion_semaforo:
                 df_act_visual = df_act_visual[df_act_visual[col_calif] <= 4.2].copy()
 
-        # --- SECCIÓN 1: MÉTRICAS COMPARATIVAS INTELIGENTES (DELTAS) ---
+        # --- SECCIÓN 1: MÉTRICAS COMPARATIVAS INTELIGENTES ---
         st.subheader("📈 Comparativa de Rendimiento Operativo")
         
         if len(rango_actual) == 2 and len(rango_anterior) == 2:
@@ -192,14 +210,15 @@ else:
         else:
             m2.metric("Promedio Calificación", "N/A")
 
-        nps_act = calcular_nps(df_act, col_nps) if col_nps else None
-        nps_ant = calcular_nps(df_ant, col_nps) if col_nps else None
+        # CÁLCULO UNIFICADO DEL NPS
+        nps_act = calcular_nps_hibrido(df_act, col_nps_nueva, col_estrellas_vieja)
+        nps_ant = calcular_nps_hibrido(df_ant, col_nps_nueva, col_estrellas_vieja)
         
         if nps_act is not None:
             diff_nps = (nps_act - nps_ant) if nps_ant is not None else None
             m3.metric(label="Índice NPS (Lealtad)", value=f"{nps_act:.1f}%", delta=f"{diff_nps:+.1f}% vs periodo ant." if diff_nps is not None else None)
         else:
-            m3.metric("Índice NPS (Lealtad)", "Esperando votos (0-10)")
+            m3.metric("Índice NPS (Lealtad)", "Esperando Datos")
 
         if col_calif in df_act.columns:
             alertas_act = len(df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif]))
@@ -282,10 +301,13 @@ else:
             st.warning("No hay registros específicos para mostrar con los filtros seleccionados.")
         else:
             columnas_finales_validas = []
-            columnas_deseadas = ['Restaurante_Origen', col_mesero, col_calif, col_comentario, col_nps, 'Fecha_Envio']
+            columnas_deseadas = ['Restaurante_Origen', col_mesero, col_calif, col_comentario, 'Fecha_Envio']
             
             for c in columnas_deseadas:
                 if c and c in df_act_visual.columns:
                     columnas_finales_validas.append(c)
+                    
+            if col_nps_nueva and col_nps_nueva in df_act_visual.columns:
+                columnas_finales_validas.append(col_nps_nueva)
                     
             st.dataframe(df_act_visual[columnas_finales_validas], use_container_width=True)
