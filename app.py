@@ -4,40 +4,33 @@ import plotly.express as px
 import os
 from datetime import datetime, timedelta
 
-# Configuración de la página con el nuevo enfoque profesional
 st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wide", page_icon="📊")
-
-# Título definitivo con ortografía y acentuación totalmente correcta
-st.title("📊 Dashboard de Operaciones, Control de Experiencia & NPS 360°")
-st.subheader("🏢 Centro de Inteligencia Operativa — Il Mercato Gentiloni")
+st.title("📊 Dashboard Automatizado con Filtro de Fechas e Indicadores - Il Mercato")
 st.markdown("---")
 
 # 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA HISTÓRICO Y NUEVO)
 def calcular_nps_hibrido(df, col_nps, col_estrellas):
-    if not col_nps and not col_estrellas:
-        return None
-        
     total_respuestas = 0
-    promotheus = 0
+    promotores = 0
     detractores = 0
     
     for _, fila in df.iterrows():
-        voto_nuevo = pd.to_numeric(fila.get(col_nps), errors='coerce') if col_nps else None
-        voto_viejo = pd.to_numeric(fila.get(col_estrellas), errors='coerce') if col_estrellas else None
+        voto_nuevo = pd.to_numeric(fila.get(col_nps), errors='coerce')
+        voto_viejo = pd.to_numeric(fila.get(col_estrellas), errors='coerce')
         
         # Caso A: Tiene el formato nuevo (0 al 10)
-        if voto_nuevo is not None and not pd.isna(voto_nuevo):
+        if not pd.isna(voto_nuevo):
             total_respuestas += 1
             if voto_nuevo >= 9:
-                promotheus += 1
+                promotores += 1
             elif voto_nuevo <= 6:
                 detractores += 1
                 
         # Caso B: No tiene formato nuevo, pero tiene el histórico de 5 estrellas
-        elif voto_viejo is not None and not pd.isna(voto_viejo):
+        elif not pd.isna(voto_viejo):
             total_respuestas += 1
             if voto_viejo == 5:      
-                promotheus += 1
+                promotores += 1
             elif voto_viejo == 4:    
                 pass 
             else:                    
@@ -46,7 +39,7 @@ def calcular_nps_hibrido(df, col_nps, col_estrellas):
     if total_respuestas == 0:
         return None
         
-    pct_promotores = (promotheus / total_respuestas) * 100
+    pct_promotores = (promotores / total_respuestas) * 100
     pct_detractores = (detractores / total_respuestas) * 100
     return pct_promotores - pct_detractores
 
@@ -67,14 +60,9 @@ def procesar_tally_csv(archivo_path):
     # Limpieza estricta de espacios en los nombres de las columnas para evitar fallas de Tally
     df.columns = df.columns.str.strip()
     
-    # Mapeo tolerante e inteligente de las columnas principales
-    col_origen_unidad = None
-    for col in df.columns:
-        if 'unidad que visitaste' in col.lower() or 'location you visited' in col.lower():
-            col_origen_unidad = col
-            break
-            
-    if col_origen_unidad and col_origen_unidad in df.columns:
+    col_origen_unidad = "Selecciona la unidad que visitaste / Select the Il Mercato Gentiloni location you visited"
+    
+    if col_origen_unidad in df.columns:
         df['Restaurante_Origen'] = df[col_origen_unidad].astype(str).str.strip().str.upper()
         df['Restaurante_Origen'] = df['Restaurante_Origen'].replace({'ÁLAMO': 'ALAMO'})
         
@@ -86,7 +74,6 @@ def procesar_tally_csv(archivo_path):
                 break
         
         if col_fecha_tally and col_fecha_tally in df.columns:
-            df['Fecha_Envio'] = pd.to_datetime(col_fecha_tally, errors='coerce').dt.date
             df['Fecha_Envio'] = pd.to_datetime(df[col_fecha_tally], errors='coerce').dt.date
         else:
             df['Fecha_Envio'] = datetime.today().date()
@@ -109,30 +96,13 @@ else:
     if df_raw is not None:
         df_completo = df_raw.copy()
         
-        # Mapeo dinámico y tolerante por texto parcial para evitar KeyErrors
-        col_mesero = None
-        col_comentario = None
-        col_calif = None
-        col_nps_nueva = None
+        col_mesero = 'Selecciona a la persona que te atendió / Select the person who assisted you'
+        col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
         
-        for c in df_completo.columns:
-            c_low = c.lower()
-            if 'persona que te atendió' in c_low or 'who assisted you' in c_low:
-                col_mesero = c
-            elif 'cómo fue tu experiencia' in c_low or 'about your visit' in c_low:
-                col_comentario = c
-            elif 'califica la atención' in c_low or 'rate your experience' in c_low:
-                col_calif = c
-            elif 'probable es que nos recomiende' in c_low or 'likely are you to recommend' in c_low:
-                col_nps_nueva = c
-                
-        # Respaldos de seguridad por si falla la detección por texto parcial
-        if not col_mesero: col_mesero = 'Selecciona a la persona que te atendió / Select the person who assisted you'
-        if not col_comentario: col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
-        if not col_calif: col_calif = 'Califica la atención recibida / How would you rate your experience?'
-        if not col_nps_nueva: col_nps_nueva = '¿Qué tan probable es que nos recomiende a un familiar, amigo o colega? /How likely are you to recommend us to a friend, family member, or colleague?'
-
-        # Forzar conversión numérica de la calificación general
+        # Nombres exactos mapeados tras limpiar los espacios del CSV
+        col_calif = 'Califica la atención recibida / How would you rate your experience?'
+        col_nps_nueva = '¿Qué tan probable es que nos recomiende a un familiar, amigo o colega? /How likely are you to recommend us to a friend, family member, or colleague?'
+        
         if col_calif in df_completo.columns:
             df_completo[col_calif] = pd.to_numeric(df_completo[col_calif], errors='coerce')
 
@@ -177,12 +147,22 @@ else:
         unidades = sorted([u for u in df_completo['Restaurante_Origen'].unique() if u != 'NAN'])
         sel_unidades = st.sidebar.multiselect("Selecciona Unidades:", unidades, default=unidades)
 
-        # --- FILTRO POR CALIFICACIÓN (SOLO AFECTA COMENTARIOS Y GRÁFICAS) ---
+        # --- FILTRO ADICIONAL CORREGIDO: SELECCIÓN POR ESTRELLAS PARA COMENTARIOS ---
         st.sidebar.markdown("---")
         st.sidebar.header("⭐ Filtro por Calificación")
-        lista_calificaciones = [1, 2, 3, 4, 5]
+        
+        # Extraer de forma segura las calificaciones convertidas numéricamente
+        if col_calif in df_completo.columns:
+            valores_estrellas = df_completo[col_calif].dropna().unique()
+            lista_calificaciones = sorted([int(x) for x in valores_estrellas if x in [1, 2, 3, 4, 5]])
+        else:
+            lista_calificaciones = [1, 2, 3, 4, 5]
+            
+        if not lista_calificaciones:
+            lista_calificaciones = [1, 2, 3, 4, 5]
+            
         sel_calificaciones = st.sidebar.multiselect(
-            "Filtrar comentarios/gráficas por:", 
+            "Mostrar calificaciones:", 
             options=lista_calificaciones, 
             default=lista_calificaciones,
             format_func=lambda x: f"{x} ⭐"
@@ -191,7 +171,7 @@ else:
         # Aplicamos los filtros base a las unidades seleccionadas
         df_base_unidades = df_completo[df_completo['Restaurante_Origen'].isin(sel_unidades)].copy()
 
-        # Separar por rangos de fechas (ESTO CONSERVA TODA LA INFORMACIÓN INDEPENDIENTE DE LAS ESTRELLAS)
+        # Separar por rangos de fechas
         df_act = pd.DataFrame()
         if isinstance(rango_actual, tuple) and len(rango_actual) == 2:
             act_i, act_f = rango_actual
@@ -202,7 +182,7 @@ else:
             ant_i, ant_f = rango_anterior
             df_ant = df_base_unidades[(df_base_unidades['Fecha_Envio'] >= ant_i) & (df_base_unidades['Fecha_Envio'] <= ant_f)].copy()
 
-        # --- SECCIÓN DE MÉTRICAS PRINCIPALES (FIJAS E INALTERABLES POR EL FILTRO DE ESTRELLAS) ---
+        # --- SECCIÓN DE MÉTRICAS ---
         st.subheader("📈 Rendimiento e Indicadores Claves del Periodo")
         
         if len(rango_actual) == 2 and len(rango_anterior) == 2:
@@ -250,24 +230,21 @@ else:
         diff_meseros = meseros_act - meseros_ant
         m5.metric(label="Meseros Evaluados", value=meseros_act, delta=f"{diff_meseros:+d} colaboradores")
 
-        # --- SECCIÓN DEL SEMÁFORO INTELIGENTE DE 4 RANGOS (TAMBIÉN FIJO PARA EL PERIODO REAL) ---
+        # --- SECCIÓN DEL SEMÁFORO INTELIGENTE ---
+        META_CALIFICACION = 4.6
         if prom_act is not None and not pd.isna(prom_act):
             st.markdown(" ")
-            if prom_act >= 4.8:
-                st.info(f"🔵 **Estatus del Periodo Evaluado: Excelente / Rango Platino.** El promedio general de {prom_act:.2f} ⭐ se encuentra en un nivel de servicio excepcional.")
-            elif prom_act >= 4.5:
-                st.success(f"🟢 **Estatus del Periodo Evaluado: Muy Bueno.** El promedio general de {prom_act:.2f} ⭐ cumple satisfactoriamente con los estándares.")
-            elif prom_act >= 4.2:
-                st.warning(f"🟡 **Estatus del Periodo Evaluado: En Observación.** El promedio general es de {prom_act:.2f} ⭐. Se sugiere monitorear desvíos.")
+            if prom_act >= META_CALIFICACION:
+                st.success(f"🟢 **Estatus del Periodo Evaluado: Excelente.** El promedio general de {prom_act:.2f} ⭐ supera la meta establecida de {META_CALIFICACION} ⭐.")
+            elif prom_act >= 4.3:
+                st.warning(f"🟡 **Estatus del Periodo Evaluado: En Observación.** El promedio general es de {prom_act:.2f} ⭐. Se sugiere revisar comentarios.")
             else:
                 st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** El promedio general cayó a {prom_act:.2f} ⭐. Requiere revisión inmediata de operaciones.")
 
-        # --- APLICACIÓN FILTRADO DE CALIFICACIÓN EXCLUSIVO PARA COMENTARIOS / GRÁFICAS ---
-        df_act_filtrado = pd.DataFrame()
-        if col_calif in df_act.columns:
-            df_act_filtrado = df_act[df_act[col_calif].isin(sel_calificaciones)].copy()
+        # --- APLICACIÓN FILTRADO DE CALIFICACIÓN EXCLUSIVO PARA COMENTARIOS / GRÁFICAS DEL CUERPO ---
+        df_act_filtrado = df_act[df_act[col_calif].isin(sel_calificaciones)].copy()
 
-        # --- GRÁFICAS Y TABLAS (ESTAS SÍ REACCIONAN DINÁMICAMENTE AL FILTRO LATERAL DE ESTRELLAS) ---
+        # --- GRÁFICAS Y TABLAS ---
         st.markdown("---")
         st.subheader("📊 Análisis Desglosado por Unidades y Colaboradores")
         
