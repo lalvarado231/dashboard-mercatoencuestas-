@@ -8,9 +8,6 @@ st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wid
 st.title("📊 Dashboard Automatizado con Filtro de Fechas e Indicadores - Il Mercato")
 st.markdown("---")
 
-# Meta u Objetivo del Grupo para el Semáforo de Calificaciones
-META_CALIFICACION = 4.6
-
 # 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA HISTÓRICO Y NUEVO)
 def calcular_nps_hibrido(df, col_nps, col_estrellas):
     total_respuestas = 0
@@ -122,83 +119,4 @@ else:
         else:
             min_fecha = datetime.today().date() - timedelta(days=60)
             max_fecha = datetime.today().date()
-            def_act_inicio, def_act_fin = min_fecha + timedelta(days=30), max_fecha
-            def_ant_inicio, def_ant_fin = min_fecha, min_fecha + timedelta(days=29)
-
-        # --- BARRA LATERAL ---
-        st.sidebar.header("📅 1. Periodo Actual (Evaluado)")
-        rango_actual = st.sidebar.date_input(
-            "Selecciona rango actual:",
-            value=(def_act_inicio, def_act_fin),
-            min_value=min_fecha,
-            max_value=max_fecha,
-            key="actual_range"
-        )
-        
-        st.sidebar.markdown("---")
-        st.sidebar.header("⏳ 2. Periodo Anterior (Comparativo)")
-        rango_anterior = st.sidebar.date_input(
-            "Selecciona rango a comparar:",
-            value=(def_ant_inicio, def_ant_fin),
-            min_value=min_fecha,
-            max_value=max_fecha,
-            key="anterior_range"
-        )
-
-        st.sidebar.markdown("---")
-        st.sidebar.header("🏢 Filtro de Unidades")
-        unidades = sorted([u for u in df_completo['Restaurante_Origen'].unique() if u != 'NAN'])
-        sel_unidades = st.sidebar.multiselect("Selecciona Unidades:", unidades, default=unidades)
-
-        df_base_unidades = df_completo[df_completo['Restaurante_Origen'].isin(sel_unidades)].copy()
-
-        df_act = pd.DataFrame()
-        if isinstance(rango_actual, tuple) and len(rango_actual) == 2:
-            act_i, act_f = rango_actual
-            df_act = df_base_unidades[(df_base_unidades['Fecha_Envio'] >= act_i) & (df_base_unidades['Fecha_Envio'] <= act_f)].copy()
-
-        df_ant = pd.DataFrame()
-        if isinstance(rango_anterior, tuple) and len(rango_anterior) == 2:
-            ant_i, ant_f = rango_anterior
-            df_ant = df_base_unidades[(df_base_unidades['Fecha_Envio'] >= ant_i) & (df_base_unidades['Fecha_Envio'] <= ant_f)].copy()
-
-        # --- SECCIÓN DE MÉTRICAS ---
-        st.subheader("📈 Rendimiento e Indicadores Claves del Periodo")
-        
-        if len(rango_actual) == 2 and len(rango_anterior) == 2:
-            st.info(f"Análisis: Periodo Actual (**{rango_actual[0].strftime('%d/%m')} al {rango_actual[1].strftime('%d/%m')}**) vs Periodo Anterior (**{rango_anterior[0].strftime('%d/%m')} al {rango_anterior[1].strftime('%d/%m')}**)")
-
-        m1, m2, m3, m4, m5 = st.columns(5)
-        
-        total_act = len(df_act)
-        total_ant = len(df_ant)
-        diff_total = total_act - total_ant
-        m1.metric(label="Total Encuestas", value=f"{total_act} resp.", delta=f"{diff_total:+d} vs periodo ant.")
-        
-        prom_act, prom_ant = None, None
-        if col_calif in df_act.columns and len(df_act) > 0:
-            prom_act = df_act[col_calif].mean()
-        if col_calif in df_ant.columns and len(df_ant) > 0:
-            prom_ant = df_ant[col_calif].mean()
-            
-        if prom_act is not None and not pd.isna(prom_act):
-            diff_prom = (prom_act - prom_ant) if (prom_ant is not None and not pd.isna(prom_ant)) else None
-            m2.metric(label="Promedio Calificación", value=f"{prom_act:.2f} ⭐", delta=f"{diff_prom:+.2f} ⭐" if diff_prom is not None else None)
-        else:
-            m2.metric("Promedio Calificación", "N/A")
-
-        # Índice NPS Híbrido e Inteligente
-        nps_act = calcular_nps_hibrido(df_act, col_nps_nueva, col_calif)
-        nps_ant = calcular_nps_hibrido(df_ant, col_nps_nueva, col_calif)
-        
-        if nps_act is not None:
-            diff_nps = (nps_act - nps_ant) if nps_ant is not None else None
-            m3.metric(label="Índice NPS (Lealtad)", value=f"{nps_act:.1f}%", delta=f"{diff_nps:+.1f}% vs periodo ant." if diff_nps is not None else None)
-        else:
-            m3.metric("Índice NPS (Lealtad)", "N/A")
-
-        if col_calif in df_act.columns:
-            alertas_act = len(df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif]))
-            alertas_ant = len(df_ant[df_ant[col_calif] <= 2].dropna(subset=[col_calif])) if len(df_ant) > 0 else 0
-            diff_alertas = alertas_act - alertas_ant
-            m4.metric(label="Alertas Críticas (1-2 ⭐)", value=alertas_act, delta
+            def
