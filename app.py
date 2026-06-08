@@ -88,10 +88,11 @@ else:
         col_calif = 'Califica la atención recibida / How would you rate your experience?'
         col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
         
-        # Buscador automático para la columna de NPS
+        # Buscador automático ultra-amplio para capturar variaciones en español e inglés ('recomiende', 'recomiendes', etc.)
         col_nps = None
         for col in df_completo.columns:
-            if 'recomiende' in col.lower() or 'likely are you to recommend' in col.lower() or 'nps' in col.lower():
+            col_min = col.lower()
+            if 'recomiend' in col_min or 'recommend' in col_min or 'nps' in col_min or 'probable' in col_min:
                 col_nps = col
                 break
         
@@ -234,4 +235,25 @@ else:
         if prom_act is not None and not pd.isna(prom_act):
             if prom_act >= META_CALIFICACION:
                 st.success(f"🟢 **Estatus del Periodo Evaluado: Excelente.** Promedio de {prom_act:.2f} ⭐")
-            elif prom_act >=
+            elif prom_act >= 4.3:
+                st.warning(f"🟡 **Estatus del Periodo Evaluado: En Observación.** Promedio de {prom_act:.2f} ⭐")
+            else:
+                st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** Promedio de {prom_act:.2f} ⭐")
+
+        st.markdown("---")
+
+        # --- SECCIÓN 2: GRÁFICOS DINÁMICOS DEL PERIODO ACTUAL ---
+        st.subheader("🏆 Análisis Visual del Periodo Actual Seleccionado")
+        
+        if len(df_act) == 0:
+            st.warning("📋 No existen encuestas registradas para el Periodo Actual en los filtros seleccionados.")
+        else:
+            g1, g2, g3 = st.columns(3)
+            
+            with g1:
+                st.markdown("##### 🏢 Volumen de Encuestas por Unidad")
+                df_unidades = df_act['Restaurante_Origen'].value_counts().reset_index()
+                df_unidades.columns = ['Unidad', 'Encuestas']
+                fig_uni = px.bar(df_unidades, x='Encuestas', y='Unidad', orientation='h', color='Encuestas', color_continuous_scale='Teal', text_auto=True)
+                fig_uni.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_uni, use_container_width=True
