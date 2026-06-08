@@ -16,8 +16,9 @@ def calcular_nps(df, columna_nps):
     if columna_nps not in df.columns or len(df) == 0:
         return None
     
-    # Asegurar que los valores sean numéricos
-    valores = pd.to_numeric(df[columna_nps], errors='coerce').dropna()
+    # Extraer el primer número que aparezca en el texto (ej. de "10 - Muy probable" saca 10)
+    valores_limpios = df[columna_nps].astype(str).str.extract(r'(\d+)')[0]
+    valores = pd.to_numeric(valores_limpios, errors='coerce').dropna()
     total_respuestas = len(valores)
     
     if total_respuestas == 0:
@@ -214,7 +215,7 @@ else:
             diff_nps = (nps_act - nps_ant) if nps_ant is not None else None
             m3.metric(label="Índice NPS (Lealtad)", value=f"{nps_act:.1f}%", delta=f"{diff_nps:+.1f}% vs periodo ant." if diff_nps is not None else None)
         else:
-            m3.metric("Índice NPS (Lealtad)", "N/A (Falta columna en Tally)")
+            m3.metric("Índice NPS (Lealtad)", "N/A (Esperando datos numéricos)")
 
         # Métrica 4: Alertas Críticas (1-2 ⭐)
         if col_calif in df_act.columns:
@@ -256,4 +257,66 @@ else:
                 df_unidades.columns = ['Unidad', 'Encuestas']
                 fig_uni = px.bar(df_unidades, x='Encuestas', y='Unidad', orientation='h', color='Encuestas', color_continuous_scale='Teal', text_auto=True)
                 fig_uni.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_uni, use_container_width=True
+                st.plotly_chart(fig_uni, use_container_width=True)
+            
+            with g2:
+                st.markdown("##### 🔝 Top 10 Meseros con Mayor Volumen")
+                if col_mesero in df_act.columns and not df_act[col_mesero].dropna().empty:
+                    top_volumen = df_act[col_mesero].value_counts().nlargest(10).reset_index()
+                    top_volumen.columns = ['Mesero', 'Cantidad']
+                    fig_vol = px.bar(top_volumen, x='Cantidad', y='Mesero', orientation='h', color='Cantidad', color_continuous_scale='Blues', text_auto=True)
+                    fig_vol.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_vol, use_container_width=True)
+                else:
+                    st.info("Sin datos de colaboradores.")
+                    
+            with g3:
+                st.markdown("##### ⭐ Top 10 Meseros con Mejor Calificación")
+                if col_mesero in df_act.columns and col_calif in df_act.columns and not df_act[col_mesero].dropna().empty:
+                    conteo_votos = df_act[col_mesero].value_counts()
+                    meseros_activos = conteo_votos.index
+                    df_meseros_activos = df_act[df_act[col_mesero].isin(meseros_activos)]
+                    
+                    if not df_meseros_activos.empty:
+                        top_calif = df_meseros_activos.groupby(col_mesero)[col_calif].mean().nlargest(10).reset_index()
+                        top_calif.columns = ['Mesero', 'Promedio']
+                        fig_cal = px.bar(top_calif, x='Promedio', y='Mesero', orientation='h', color='Promedio', color_continuous_scale='Reds', text_auto='.2f', range_x=[0,5])
+                        fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
+                        st.plotly_chart(fig_cal, use_container_width=True)
+                    else:
+                        st.info("Sin promedios suficientes.")
+                else:
+                    st.info("Sin calificaciones disponibles.")
+
+        # --- SECCIÓN 3: TABLA DE COMENTARIOS NEGATIVOS ---
+        if col_calif in df_act.columns and len(df_act) > 0:
+            malos_comentarios = df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif])
+            if not malos_comentarios.empty:
+                st.markdown("---")
+                st.subheader("⚠️ Atención Inmediata: Comentarios Negativos (Periodo Actual)")
+                columnas_existentes = [c for c in ['Restaurante_Origen', col_mesero, col_calif, col_comentario] if c in df_act.columns]
+                st.dataframe(malos_comentarios[columnas_existentes], use_container_width=True)
+
+        # --- SECCIÓN 4: REVISIÓN GLOBAL BLINDADA ---
+        st.markdown("---")
+        st.subheader("📋 Consolidado de Datos Auditados (Filtrado por Semáforo)")
+        if "🔵" not in opcion_semaforo:
+            st.info(f"Filtro de Semáforo Activo: Mostrando únicamente registros en **{opcion_semaforo[2:]}** del periodo actual.")
+        
+        if len(df_act_visual) == 0:
+            st.warning(f"No hay registros específicos que entren en la categoría {opcion_semaforo} para los días seleccionados.")
+        else:
+            columnas_finales_validas = []
+            columnas_deseadas = ['Restaurante_Origen', col_mesero, col_calif, col_comentario, col_nps]
+            
+            for c in columnas_deseadas:
+                if c and c in df_act_visual.columns and c not in columnas_finales_validas:
+                    columnas_finales_validas.append(c)
+            
+            for col in df_act_visual.columns:
+                if col in ['Submitted at', 'Submission ID', 'Fecha_Envio'] and col not in columnas_finales_validas:
+                    columnas_finales_validas.append(col)
+                    
+            st.dataframe(df_act_visual[columnas_finales_validas], use_container_width=True)
+    else:
+        st.error("Error al procesar la estructura del archivo. Revisa que sea el CSV correcto descargado de Tally.")
