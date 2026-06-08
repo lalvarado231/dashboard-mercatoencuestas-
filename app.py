@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wide", page_icon="📊")
-st.title("📊 Dashboard Automatizado con Filtro de Fechas e Indicadores - Il Mercato")
+st.title("📊 Dashboard Operaciones y Hospitalidad, Control de Experiencia & NPS 360° - Il Mercato Gentiloni")
 st.markdown("---")
 
 # 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA HISTÓRICO Y NUEVO)
