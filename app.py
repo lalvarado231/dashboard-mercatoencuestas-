@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wide", page_icon="📊")
-st.title("📊 Dashboard Automatizado con Filtro de Fechas e Indicadores - Il Mercato")
+st.title("📊 Dashboard Operaciones & NPS 360°- Il Mercato")
 st.markdown("---")
 
 # Meta u Objetivo del Grupo para el Semáforo de Calificaciones
