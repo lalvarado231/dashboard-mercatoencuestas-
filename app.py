@@ -4,8 +4,12 @@ import plotly.express as px
 import os
 from datetime import datetime, timedelta
 
+# Configuración de la página con el nuevo enfoque profesional
 st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wide", page_icon="📊")
-st.title("📊 Dashboard de Operaciones, Control de Experiencia & NPS 360°- Il Mercato Gentiloni")
+
+# Título definitivo con ortografía y acentuación totalmente correcta
+st.title("📊 Dashboard de Operaciones, Control de Experiencia & NPS 360°")
+st.subheader("🏢 Centro de Inteligencia Operativa — Il Mercato Gentiloni")
 st.markdown("---")
 
 # 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA HISTÓRICO Y NUEVO)
@@ -14,7 +18,7 @@ def calcular_nps_hibrido(df, col_nps, col_estrellas):
         return None
         
     total_respuestas = 0
-    promotores = 0
+    promotheus = 0
     detractores = 0
     
     for _, fila in df.iterrows():
@@ -25,7 +29,7 @@ def calcular_nps_hibrido(df, col_nps, col_estrellas):
         if voto_nuevo is not None and not pd.isna(voto_nuevo):
             total_respuestas += 1
             if voto_nuevo >= 9:
-                promotores += 1
+                promotheus += 1
             elif voto_nuevo <= 6:
                 detractores += 1
                 
@@ -33,7 +37,7 @@ def calcular_nps_hibrido(df, col_nps, col_estrellas):
         elif voto_viejo is not None and not pd.isna(voto_viejo):
             total_respuestas += 1
             if voto_viejo == 5:      
-                promotores += 1
+                promotheus += 1
             elif voto_viejo == 4:    
                 pass 
             else:                    
@@ -42,7 +46,7 @@ def calcular_nps_hibrido(df, col_nps, col_estrellas):
     if total_respuestas == 0:
         return None
         
-    pct_promotores = (promotores / total_respuestas) * 100
+    pct_promotores = (promotheus / total_respuestas) * 100
     pct_detractores = (detractores / total_respuestas) * 100
     return pct_promotores - pct_detractores
 
@@ -103,6 +107,9 @@ else:
     
     if df_raw is not None:
         df_completo = df_raw.copy()
+        
+        # Guardamos la cantidad absoluta de encuestas totales del archivo crudo
+        total_absoluto_historico = len(df_completo)
         
         # Mapeo dinámico y tolerante por texto parcial para evitar KeyErrors
         col_mesero = None
@@ -172,12 +179,12 @@ else:
         unidades = sorted([u for u in df_completo['Restaurante_Origen'].unique() if u != 'NAN'])
         sel_unidades = st.sidebar.multiselect("Selecciona Unidades:", unidades, default=unidades)
 
-        # --- FILTRO POR CALIFICACIÓN TOTALMENTE SEGURO ---
+        # --- FILTRO POR CALIFICACIÓN (SOLO AFECTA COMENTARIOS Y GRÁFICAS) ---
         st.sidebar.markdown("---")
         st.sidebar.header("⭐ Filtro por Calificación")
         lista_calificaciones = [1, 2, 3, 4, 5]
         sel_calificaciones = st.sidebar.multiselect(
-            "Mostrar calificaciones:", 
+            "Filtrar comentarios/gráficas por:", 
             options=lista_calificaciones, 
             default=lista_calificaciones,
             format_func=lambda x: f"{x} ⭐"
@@ -186,7 +193,7 @@ else:
         # Aplicamos los filtros base a las unidades seleccionadas
         df_base_unidades = df_completo[df_completo['Restaurante_Origen'].isin(sel_unidades)].copy()
 
-        # Separar por rangos de fechas
+        # Separar por rangos de fechas (Conserva toda la información independiente de las estrellas)
         df_act = pd.DataFrame()
         if isinstance(rango_actual, tuple) and len(rango_actual) == 2:
             act_i, act_f = rango_actual
@@ -197,7 +204,7 @@ else:
             ant_i, ant_f = rango_anterior
             df_ant = df_base_unidades[(df_base_unidades['Fecha_Envio'] >= ant_i) & (df_base_unidades['Fecha_Envio'] <= ant_f)].copy()
 
-        # --- SECCIÓN DE MÉTRICAS ---
+        # --- SECCIÓN DE MÉTRICAS PRINCIPALES ---
         st.subheader("📈 Rendimiento e Indicadores Claves del Periodo")
         
         if len(rango_actual) == 2 and len(rango_anterior) == 2:
@@ -205,10 +212,15 @@ else:
 
         m1, m2, m3, m4, m5 = st.columns(5)
         
+        # Métrica 1 optimizada: Muestra respuestas filtradas en el periodo grande y abajo el total acumulado real histórico
         total_act = len(df_act)
         total_ant = len(df_ant)
         diff_total = total_act - total_ant
-        m1.metric(label="Total Encuestas", value=f"{total_act} resp.", delta=f"{diff_total:+d} vs periodo ant.")
+        m1.metric(
+            label="Total Encuestas (Filtro)", 
+            value=f"{total_act} resp.", 
+            delta=f"Histórico total: {total_absoluto_historico}"
+        )
         
         prom_act, prom_ant = None, None
         if col_calif in df_act.columns and len(df_act) > 0:
