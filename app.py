@@ -8,6 +8,9 @@ st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wid
 st.title("📊 Dashboard Automatizado con Filtro de Fechas e Indicadores - Il Mercato")
 st.markdown("---")
 
+# Meta u Objetivo del Grupo para el Semáforo de Calificaciones
+META_CALIFICACION = 4.6
+
 # 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA HISTÓRICO Y NUEVO)
 def calcular_nps_hibrido(df, col_nps, col_estrellas):
     total_respuestas = 0
@@ -179,4 +182,74 @@ else:
             prom_ant = df_ant[col_calif].mean()
             
         if prom_act is not None and not pd.isna(prom_act):
-            diff_prom = (prom_act - prom_ant) if (prom_ant is not None and not pd.isna(prom_ant)) else
+            diff_prom = (prom_act - prom_ant) if (prom_ant is not None and not pd.isna(prom_ant)) else None
+            m2.metric(label="Promedio Calificación", value=f"{prom_act:.2f} ⭐", delta=f"{diff_prom:+.2f} ⭐" if diff_prom is not None else None)
+        else:
+            m2.metric("Promedio Calificación", "N/A")
+
+        # Índice NPS Híbrido e Inteligente
+        nps_act = calcular_nps_hibrido(df_act, col_nps_nueva, col_calif)
+        nps_ant = calcular_nps_hibrido(df_ant, col_nps_nueva, col_calif)
+        
+        if nps_act is not None:
+            diff_nps = (nps_act - nps_ant) if nps_ant is not None else None
+            m3.metric(label="Índice NPS (Lealtad)", value=f"{nps_act:.1f}%", delta=f"{diff_nps:+.1f}% vs periodo ant." if diff_nps is not None else None)
+        else:
+            m3.metric("Índice NPS (Lealtad)", "N/A")
+
+        if col_calif in df_act.columns:
+            alertas_act = len(df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif]))
+            alertas_ant = len(df_ant[df_ant[col_calif] <= 2].dropna(subset=[col_calif])) if len(df_ant) > 0 else 0
+            diff_alertas = alertas_act - alertas_ant
+            m4.metric(label="Alertas Críticas (1-2 ⭐)", value=alertas_act, delta=f"{diff_alertas:+d} quejas", delta_color="inverse")
+        else:
+            m4.metric("Alertas Críticas", "0")
+
+        meseros_act = df_act[col_mesero].dropna().nunique() if (col_mesero in df_act.columns and len(df_act) > 0) else 0
+        meseros_ant = df_ant[col_mesero].dropna().nunique() if (col_mesero in df_ant.columns and len(df_ant) > 0) else 0
+        diff_meseros = meseros_act - meseros_ant
+        m5.metric(label="Meseros Evaluados", value=meseros_act, delta=f"{diff_meseros:+d} colaboradores")
+
+        # --- SECCIÓN DEL SEMÁFORO INTELIGENTE (UBICADO ABAJO DE LAS MÉTRICAS) ---
+        if prom_act is not None and not pd.isna(prom_act):
+            st.markdown(" ")
+            if prom_act >= META_CALIFICACION:
+                st.success(f"🟢 **Estatus del Periodo Evaluado: Excelente.** El promedio general de {prom_act:.2f} ⭐ supera la meta establecida de {META_CALIFICACION} ⭐.")
+            elif prom_act >= 4.3:
+                st.warning(f"🟡 **Estatus del Periodo Evaluado: En Observación.** El promedio general es de {prom_act:.2f} ⭐. Se sugiere revisar comentarios.")
+            else:
+                st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** El promedio general cayó a {prom_act:.2f} ⭐. Requiere revisión inmediata de operaciones.")
+
+        # --- GRÁFICAS Y TABLAS ---
+        st.markdown("---")
+        st.subheader("📊 Análisis Desglosado por Unidades y Colaboradores")
+        
+        if len(df_act) == 0:
+            st.warning("📋 No existen encuestas registradas para el Periodo Actual.")
+        else:
+            g1, g2 = st.columns(2)
+            
+            with g1:
+                st.markdown("##### 🏢 Volumen de Encuestas por Unidad")
+                df_unidades = df_act['Restaurante_Origen'].value_counts().reset_index()
+                df_unidades.columns = ['Unidad', 'Encuestas']
+                fig_uni = px.bar(df_unidades, x='Encuestas', y='Unidad', orientation='h', color='Encuestas', color_continuous_scale='Teal', text_auto=True)
+                fig_uni.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_uni, use_container_width=True)
+            
+            with g2:
+                st.markdown("##### ⭐ Top Colaboradores por Calificación Promedio")
+                if col_mesero in df_act.columns and col_calif in df_act.columns and not df_act[col_mesero].dropna().empty:
+                    top_calif = df_act.groupby(col_mesero)[col_calif].mean().nlargest(10).reset_index()
+                    top_calif.columns = ['Colaborador', 'Promedio ⭐']
+                    fig_cal = px.bar(top_calif, x='Promedio ⭐', y='Colaborador', orientation='h', color='Promedio ⭐', color_continuous_scale='Reds', text_auto='.2f', range_x=[0,5])
+                    fig_cal.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_cal, use_container_width=True)
+                else:
+                    st.info("Sin calificaciones disponibles.")
+
+        st.markdown("---")
+        st.subheader("📋 Registro Total de Encuestas en el Periodo")
+        columnas_deseadas = ['Restaurante_Origen', col_mesero, col_calif, col_nps_nueva, col_comentario, 'Fecha_Envio']
+        columnas_finales = [c for c in columnas_deseadas if c in df_act.columns]
+        st.dataframe(df_act[columnas_finales], use_container_width=True)
