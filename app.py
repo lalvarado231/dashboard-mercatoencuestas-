@@ -5,13 +5,48 @@ import os
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Il Mercato - Inteligencia Operativa", layout="wide", page_icon="📊")
-st.title("📊 Dashboard Automatizado con Filtro de Fechas - Il Mercato")
+st.title("📊 Dashboard Automatizado con Filtro de Fechas e Indicadores - Il Mercato")
 st.markdown("---")
 
 # Meta u Objetivo del Grupo para el Semáforo de Calificaciones
 META_CALIFICACION = 4.6
 
-# 1. PROCESADOR AUTOMÁTICO DE ARCHIVOS CRUDOS DE TALLY (CSV)
+# 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA HISTÓRICO Y NUEVO)
+def calcular_nps_hibrido(df, col_nps, col_estrellas):
+    total_respuestas = 0
+    promotores = 0
+    detractores = 0
+    
+    for _, fila in df.iterrows():
+        voto_nuevo = pd.to_numeric(fila.get(col_nps), errors='coerce')
+        voto_viejo = pd.to_numeric(fila.get(col_estrellas), errors='coerce')
+        
+        # Caso A: Tiene el formato nuevo (0 al 10)
+        if not pd.isna(voto_nuevo):
+            total_respuestas += 1
+            if voto_nuevo >= 9:
+                promotores += 1
+            elif voto_nuevo <= 6:
+                detractores += 1
+                
+        # Caso B: No tiene formato nuevo, pero tiene el histórico de 5 estrellas
+        elif not pd.isna(voto_viejo):
+            total_respuestas += 1
+            if voto_viejo == 5:      
+                promotores += 1
+            elif voto_viejo == 4:    
+                pass 
+            else:                    
+                detractores += 1
+
+    if total_respuestas == 0:
+        return None
+        
+    pct_promotores = (promotores / total_respuestas) * 100
+    pct_detractores = (detractores / total_respuestas) * 100
+    return pct_promotores - pct_detractores
+
+# 2. PROCESADOR AUTOMÁTICO DE ARCHIVOS CRUDOS DE TALLY (CSV)
 @st.cache_data(show_spinner=False)  
 def procesar_tally_csv(archivo_path):
     if not os.path.exists(archivo_path):
@@ -25,6 +60,9 @@ def procesar_tally_csv(archivo_path):
         except:
             return None
             
+    # Limpieza estricta de espacios en los nombres de las columnas para evitar fallas de Tally
+    df.columns = df.columns.str.strip()
+    
     col_origen_unidad = "Selecciona la unidad que visitaste / Select the Il Mercato Gentiloni location you visited"
     
     if col_origen_unidad in df.columns:
@@ -47,7 +85,7 @@ def procesar_tally_csv(archivo_path):
         
     return None
 
-# 2. DETECTAR EL ARCHIVO DE TALLY
+# 3. DETECTAR EL ARCHIVO DE TALLY
 todos_los_archivos = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
 
 if len(todos_los_archivos) == 0:
@@ -64,19 +102,10 @@ else:
         col_mesero = 'Selecciona a la persona que te atendió / Select the person who assisted you'
         col_comentario = 'Cuéntanos cómo fue tu experiencia / Tell us about your visit'
         
-        # --- BÚSQUEDA INTELIGENTE Y FLEXIBLE DE LA COLUMNA DE CALIFICACIÓN ---
-        col_calif = None
-        for col in df_completo.columns:
-            # Si contiene "califica" y "atención" o "rate your experience", esa es nuestra columna de estrellas
-            if ('califica' in col.lower() and 'atención' in col.lower()) or 'rate your experience' in col.lower():
-                col_calif = col
-                break
+        # Nombres exactos mapeados tras limpiar los espacios del CSV
+        col_calif = 'Califica la atención recibida / How would you rate your experience?'
+        col_nps_nueva = '¿Qué tan probable es que nos recomiende a un familiar, amigo o colega? /How likely are you to recommend us to a friend, family member, or colleague?'
         
-        # Si por alguna razón cambió radicalmente, usamos el nombre original como respaldo
-        if col_calif is None:
-            col_calif = 'Califica la atención recibida / How would you rate your experience?'
-        
-        # Convertir la columna a números de forma segura
         if col_calif in df_completo.columns:
             df_completo[col_calif] = pd.to_numeric(df_completo[col_calif], errors='coerce')
 
@@ -139,12 +168,12 @@ else:
         if len(rango_actual) == 2 and len(rango_anterior) == 2:
             st.info(f"Análisis: Periodo Actual (**{rango_actual[0].strftime('%d/%m')} al {rango_actual[1].strftime('%d/%m')}**) vs Periodo Anterior (**{rango_anterior[0].strftime('%d/%m')} al {rango_anterior[1].strftime('%d/%m')}**)")
 
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3, m4, m5 = st.columns(5)
         
         total_act = len(df_act)
         total_ant = len(df_ant)
         diff_total = total_act - total_ant
-        m1.metric(label="Total Encuestas en Rango", value=f"{total_act} respuestas", delta=f"{diff_total:+d} vs periodo ant.")
+        m1.metric(label="Total Encuestas", value=f"{total_act} resp.", delta=f"{diff_total:+d} vs periodo ant.")
         
         prom_act, prom_ant = None, None
         if col_calif in df_act.columns and len(df_act) > 0:
@@ -156,20 +185,30 @@ else:
             diff_prom = (prom_act - prom_ant) if (prom_ant is not None and not pd.isna(prom_ant)) else None
             m2.metric(label="Promedio Calificación", value=f"{prom_act:.2f} ⭐", delta=f"{diff_prom:+.2f} ⭐" if diff_prom is not None else None)
         else:
-            m2.metric("Promedio Calificación", "Falta columna estrellas")
+            m2.metric("Promedio Calificación", "N/A")
+
+        # Índice NPS Híbrido e Inteligente incorporado sin alterar la vista
+        nps_act = calcular_nps_hibrido(df_act, col_nps_nueva, col_calif)
+        nps_ant = calcular_nps_hibrido(df_ant, col_nps_nueva, col_calif)
+        
+        if nps_act is not None:
+            diff_nps = (nps_act - nps_ant) if nps_ant is not None else None
+            m3.metric(label="Índice NPS (Lealtad)", value=f"{nps_act:.1f}%", delta=f"{diff_nps:+.1f}% vs periodo ant." if diff_nps is not None else None)
+        else:
+            m3.metric("Índice NPS (Lealtad)", "N/A")
 
         if col_calif in df_act.columns:
             alertas_act = len(df_act[df_act[col_calif] <= 2].dropna(subset=[col_calif]))
             alertas_ant = len(df_ant[df_ant[col_calif] <= 2].dropna(subset=[col_calif])) if len(df_ant) > 0 else 0
             diff_alertas = alertas_act - alertas_ant
-            m3.metric(label="Alertas Críticas", value=alertas_act, delta=f"{diff_alertas:+d} quejas", delta_color="inverse")
+            m4.metric(label="Alertas Críticas (1-2 ⭐)", value=alertas_act, delta=f"{diff_alertas:+d} quejas", delta_color="inverse")
         else:
-            m3.metric("Alertas Críticas", "0")
+            m4.metric("Alertas Críticas", "0")
 
         meseros_act = df_act[col_mesero].dropna().nunique() if (col_mesero in df_act.columns and len(df_act) > 0) else 0
         meseros_ant = df_ant[col_mesero].dropna().nunique() if (col_mesero in df_ant.columns and len(df_ant) > 0) else 0
         diff_meseros = meseros_act - meseros_ant
-        m4.metric(label="Meseros Evaluados", value=meseros_act, delta=f"{diff_meseros:+d} colaboradores")
+        m5.metric(label="Meseros Evaluados", value=meseros_act, delta=f"{diff_meseros:+d} colaboradores")
 
         # --- GRÁFICAS Y TABLAS ---
         st.markdown("---")
@@ -201,6 +240,6 @@ else:
 
         st.markdown("---")
         st.subheader("📋 Registro Total de Encuestas en el Periodo")
-        columnas_deseadas = ['Restaurante_Origen', col_mesero, col_calif, col_comentario, 'Fecha_Envio']
+        columnas_deseadas = ['Restaurante_Origen', col_mesero, col_calif, col_nps_nueva, col_comentario, 'Fecha_Envio']
         columnas_finales = [c for c in columnas_deseadas if c in df_act.columns]
         st.dataframe(df_act[columnas_finales], use_container_width=True)
