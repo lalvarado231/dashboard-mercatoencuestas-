@@ -10,16 +10,20 @@ st.markdown("---")
 
 # 1. FUNCIÓN HÍBRIDA INTELIGENTE PARA CALCULAR EL NPS (SOPORTA HISTÓRICO Y NUEVO)
 def calcular_nps_hibrido(df, col_nps, col_estrellas):
+    if df is None or df.empty:
+        return None
+        
     total_respuestas = 0
     promotores = 0
     detractores = 0
     
     for _, fila in df.iterrows():
-        voto_nuevo = pd.to_numeric(fila.get(col_nps), errors='coerce')
-        voto_viejo = pd.to_numeric(fila.get(col_estrellas), errors='coerce')
+        # Extraer los valores de forma segura como escalares
+        voto_nuevo = pd.to_numeric(fila.get(col_nps), errors='coerce') if col_nps in fila else None
+        voto_viejo = pd.to_numeric(fila.get(col_estrellas), errors='coerce') if col_estrellas in fila else None
         
         # Caso A: Tiene el formato nuevo (0 al 10)
-        if not pd.isna(voto_nuevo):
+        if pd.notna(voto_nuevo):
             total_respuestas += 1
             if voto_nuevo >= 9:
                 promotores += 1
@@ -27,9 +31,9 @@ def calcular_nps_hibrido(df, col_nps, col_estrellas):
                 detractores += 1
                 
         # Caso B: No tiene formato nuevo, pero tiene el histórico de 5 estrellas
-        elif not pd.isna(voto_viejo):
+        elif pd.notna(voto_viejo):
             total_respuestas += 1
-            if voto_viejo == 5:      
+            if voto_viejo == 5:     
                 promotores += 1
             elif voto_viejo == 4:    
                 pass 
@@ -65,22 +69,22 @@ def procesar_tally_csv(archivo_path):
     if col_origen_unidad in df.columns:
         df['Restaurante_Origen'] = df[col_origen_unidad].astype(str).str.strip().str.upper()
         df['Restaurante_Origen'] = df['Restaurante_Origen'].replace({'ÁLAMO': 'ALAMO'})
+    else:
+        df['Restaurante_Origen'] = 'DESCONOCIDO'
         
-        # Buscar dinámicamente la columna de fecha de envío
-        col_fecha_tally = None
-        for col in df.columns:
-            if 'submitted' in col.lower() or 'fecha' in col.lower():
-                col_fecha_tally = col
-                break
-        
-        if col_fecha_tally and col_fecha_tally in df.columns:
-            df['Fecha_Envio'] = pd.to_datetime(df[col_fecha_tally], errors='coerce').dt.date
-        else:
-            df['Fecha_Envio'] = datetime.today().date()
+    # Buscar dinámicamente la columna de fecha de envío
+    col_fecha_tally = None
+    for col in df.columns:
+        if 'submitted' in col.lower() or 'fecha' in col.lower():
+            col_fecha_tally = col
+            break
             
-        return df.copy()
+    if col_fecha_tally and col_fecha_tally in df.columns:
+        df['Fecha_Envio'] = pd.to_datetime(df[col_fecha_tally], errors='coerce').dt.date
+    else:
+        df['Fecha_Envio'] = datetime.today().date()
         
-    return None
+    return df.copy()
 
 # 3. DETECTAR EL ARCHIVO DE TALLY
 todos_los_archivos = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
@@ -144,14 +148,13 @@ else:
 
         st.sidebar.markdown("---")
         st.sidebar.header("🏢 Filtro de Unidades")
-        unidades = sorted([u for u in df_completo['Restaurante_Origen'].unique() if u != 'NAN'])
+        unidades = sorted([u for u in df_completo['Restaurante_Origen'].unique() if pd.notna(u) and str(u) != 'NAN'])
         sel_unidades = st.sidebar.multiselect("Selecciona Unidades:", unidades, default=unidades)
 
-        # --- FILTRO ADICIONAL CORREGIDO: SELECCIÓN POR ESTRELLAS PARA COMENTARIOS ---
+        # --- FILTRO ADICIONAL: SELECCIÓN POR ESTRELLAS PARA COMENTARIOS ---
         st.sidebar.markdown("---")
         st.sidebar.header("⭐ Filtro por Calificación")
         
-        # Extraer de forma segura las calificaciones convertidas numéricamente
         if col_calif in df_completo.columns:
             valores_estrellas = df_completo[col_calif].dropna().unique()
             lista_calificaciones = sorted([int(x) for x in valores_estrellas if x in [1, 2, 3, 4, 5]])
@@ -173,19 +176,19 @@ else:
 
         # Separar por rangos de fechas
         df_act = pd.DataFrame()
-        if isinstance(rango_actual, tuple) and len(rango_actual) == 2:
+        if isinstance(rango_actual, (list, tuple)) and len(rango_actual) == 2:
             act_i, act_f = rango_actual
             df_act = df_base_unidades[(df_base_unidades['Fecha_Envio'] >= act_i) & (df_base_unidades['Fecha_Envio'] <= act_f)].copy()
 
         df_ant = pd.DataFrame()
-        if isinstance(rango_anterior, tuple) and len(rango_anterior) == 2:
+        if isinstance(rango_anterior, (list, tuple)) and len(rango_anterior) == 2:
             ant_i, ant_f = rango_anterior
             df_ant = df_base_unidades[(df_base_unidades['Fecha_Envio'] >= ant_i) & (df_base_unidades['Fecha_Envio'] <= ant_f)].copy()
 
         # --- SECCIÓN DE MÉTRICAS ---
         st.subheader("📈 Rendimiento e Indicadores Claves del Periodo")
         
-        if len(rango_actual) == 2 and len(rango_anterior) == 2:
+        if isinstance(rango_actual, (list, tuple)) and len(rango_actual) == 2 and isinstance(rango_anterior, (list, tuple)) and len(rango_anterior) == 2:
             st.info(f"Análisis: Periodo Actual (**{rango_actual[0].strftime('%d/%m')} al {rango_actual[1].strftime('%d/%m')}**) vs Periodo Anterior (**{rango_anterior[0].strftime('%d/%m')} al {rango_anterior[1].strftime('%d/%m')}**)")
 
         m1, m2, m3, m4, m5 = st.columns(5)
@@ -242,7 +245,10 @@ else:
                 st.error(f"🔴 **Estatus del Periodo Evaluado: Alerta Crítica.** El promedio general cayó a {prom_act:.2f} ⭐. Requiere revisión inmediata de operaciones.")
 
         # --- APLICACIÓN FILTRADO DE CALIFICACIÓN EXCLUSIVO PARA COMENTARIOS / GRÁFICAS DEL CUERPO ---
-        df_act_filtrado = df_act[df_act[col_calif].isin(sel_calificaciones)].copy()
+        if col_calif in df_act.columns:
+            df_act_filtrado = df_act[df_act[col_calif].isin(sel_calificaciones)].copy()
+        else:
+            df_act_filtrado = df_act.copy()
 
         # --- GRÁFICAS Y TABLAS ---
         st.markdown("---")
